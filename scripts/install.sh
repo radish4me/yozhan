@@ -85,6 +85,9 @@ if command -v systemctl >/dev/null 2>&1 && systemctl --user status >/dev/null 2>
 Description=yozhan agent runtime
 [Service]
 Environment=YOZHAN_CONFIG_DIR=$YOZHAN_HOME/config
+Environment=YOZHAN_SKILLS_DIR=$REPO_DIR/skills
+Environment=YOZHAN_DATA_DIR=$YOZHAN_HOME/data
+Environment=YOZHAN_WORKSPACE_DIR=$YOZHAN_HOME/workspace
 Environment=LLAMA_SERVER_URL=http://127.0.0.1:8080/v1
 EnvironmentFile=$YOZHAN_HOME/.env
 ExecStart=$YOZHAN_HOME/venv/bin/yozhan serve
@@ -110,6 +113,8 @@ EOF
   log "enabled systemd --user services: yozhan-runtime, yozhan-gateway"
 else
   log "systemd --user unavailable; start manually:"
+  log "  YOZHAN_CONFIG_DIR=$YOZHAN_HOME/config YOZHAN_SKILLS_DIR=$REPO_DIR/skills \\"
+  log "  YOZHAN_DATA_DIR=$YOZHAN_HOME/data YOZHAN_WORKSPACE_DIR=$YOZHAN_HOME/workspace \\"
   log "  $YOZHAN_HOME/venv/bin/yozhan serve"
   log "  (cd $REPO_DIR/gateway && npm run build && node dist/index.js)"
 fi

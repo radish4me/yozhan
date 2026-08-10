@@ -19,9 +19,13 @@ services:
     env_file: .env
     environment:
       - LLAMA_SERVER_URL=http://llama-server:8080/v1
+      - YOZHAN_DATA_DIR=/app/data
+      - YOZHAN_SKILLS_DIR=/app/skills
+      - YOZHAN_WORKSPACE_DIR=/app/workspace
     volumes:
       - ./config:/app/config
       - runtime_data:/app/data
+      - runtime_workspace:/app/workspace
     depends_on: [llama-server]
     networks: [yozhan_internal]
 
@@ -41,6 +45,7 @@ services:
 volumes:
   llama_cache:
   runtime_data:
+  runtime_workspace:
 
 networks:
   yozhan_internal:

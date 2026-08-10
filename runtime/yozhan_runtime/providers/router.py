@@ -1,7 +1,8 @@
 """Resolves a provider/model reference (or a fallback chain) to an actual
 OpenAI-compatible chat completion call. Phase 1 scope: local llama.cpp only,
-sequential fallback. Multi-key rotation and parallel fan-out land in Phase 4
-per ROADMAP.md.
+sequential fallback. Phase 2 adds OpenAI-style `tools` passthrough for skill
+tool-calling. Multi-key rotation and parallel fan-out land in Phase 4 per
+ROADMAP.md.
 """
 
 from __future__ import annotations
@@ -22,7 +23,8 @@ class ProviderError(RuntimeError):
 class ChatResult:
     provider: str
     model: str
-    content: str
+    content: str | None
+    tool_calls: list[dict] | None = None
 
 
 class ProviderRouter:
@@ -38,20 +40,29 @@ class ProviderRouter:
     def default_local_model(self) -> str:
         return self.config["providers"]["local"]["default_model"]
 
-    def chat_local(self, messages: list[dict], model: str | None = None, timeout: float = 120.0) -> ChatResult:
+    def chat_local(
+        self,
+        messages: list[dict],
+        model: str | None = None,
+        tools: list[dict] | None = None,
+        timeout: float = 120.0,
+    ) -> ChatResult:
         """Calls llama-server's OpenAI-compatible /v1/chat/completions endpoint."""
         base_url = self._local_base_url().rstrip("/")
         model = model or self.default_local_model()
+        payload: dict = {"model": model, "messages": messages}
+        if tools:
+            payload["tools"] = tools
         try:
-            resp = httpx.post(
-                f"{base_url}/chat/completions",
-                json={"model": model, "messages": messages},
-                timeout=timeout,
-            )
+            resp = httpx.post(f"{base_url}/chat/completions", json=payload, timeout=timeout)
             resp.raise_for_status()
         except httpx.HTTPError as exc:
             raise ProviderError(f"local provider request failed: {exc}") from exc
 
-        data = resp.json()
-        content = data["choices"][0]["message"]["content"]
-        return ChatResult(provider="local", model=model, content=content)
+        message = resp.json()["choices"][0]["message"]
+        return ChatResult(
+            provider="local",
+            model=model,
+            content=message.get("content"),
+            tool_calls=message.get("tool_calls"),
+        )

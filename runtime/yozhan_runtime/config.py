@@ -33,6 +33,17 @@ def config_dir() -> Path:
     return Path(os.environ.get("YOZHAN_CONFIG_DIR", "config"))
 
 
+def skills_dirs() -> list[Path]:
+    """Built-in skills dir (repo `skills/` or $YOZHAN_SKILLS_DIR) + user overrides (~/.yozhan/skills)."""
+    built_in = Path(os.environ.get("YOZHAN_SKILLS_DIR", "skills"))
+    user_dir = Path.home() / ".yozhan" / "skills"
+    return [built_in, user_dir]
+
+
+def data_dir() -> Path:
+    return Path(os.environ.get("YOZHAN_DATA_DIR", "data"))
+
+
 def load_yaml(name: str) -> dict:
     path = config_dir() / name
     with path.open("r", encoding="utf-8") as fh:

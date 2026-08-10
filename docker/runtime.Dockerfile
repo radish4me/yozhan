@@ -7,8 +7,10 @@ COPY runtime/yozhan_runtime /app/runtime/yozhan_runtime
 RUN pip install --no-cache-dir -e /app/runtime
 
 COPY config /app/config
+COPY skills /app/skills
 
 ENV YOZHAN_CONFIG_DIR=/app/config
+ENV YOZHAN_SKILLS_DIR=/app/skills
 EXPOSE 8787
 
 ENTRYPOINT ["yozhan"]
