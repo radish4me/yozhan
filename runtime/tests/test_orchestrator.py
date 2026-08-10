@@ -24,7 +24,10 @@ PROVIDERS_CONFIG = {
 
 
 class FakeRouter:
-    """Only 'local' has transport — mirrors the real ProviderRouter's Phase 3 boundary."""
+    """Only 'local' has transport. Mirrors the real ProviderRouter's fallback
+    chain walking (chat_with_fallback) and parallel fan-out (chat_parallel)
+    logic closely enough to test Orchestrator/ChatAgent against, without any
+    network access."""
 
     def __init__(self, local_reply: str = "ok"):
         self.local_reply = local_reply
@@ -35,6 +38,27 @@ class FakeRouter:
         if provider == "local":
             return ChatResult(provider="local", model=model, content=self.local_reply)
         raise ProviderError(f"provider '{provider}' has no transport implemented yet")
+
+    def chat_with_fallback(self, chain, messages, tools=None, timeout=120.0):
+        errors = []
+        for entry in chain:
+            try:
+                return self.chat(entry["provider"], entry.get("model"), messages, tools=tools, timeout=timeout)
+            except ProviderError as exc:
+                errors.append(str(exc))
+        raise ProviderError("every provider in the fallback chain failed: " + " | ".join(errors))
+
+    def chat_parallel(self, members, messages, tools=None, timeout=120.0):
+        outcomes = []
+        for entry in members:
+            try:
+                result = self.chat(entry["provider"], entry.get("model"), messages, tools=tools, timeout=timeout)
+                outcomes.append({"provider": entry["provider"], "model": entry.get("model"), "result": result, "error": None})
+            except ProviderError as exc:
+                outcomes.append(
+                    {"provider": entry["provider"], "model": entry.get("model"), "result": None, "error": str(exc)}
+                )
+        return outcomes
 
 
 def make_orchestrator(tmp_path, router):
@@ -88,3 +112,68 @@ def test_each_agent_gets_its_own_session(tmp_path):
 
     history = orchestrator.memory.get_history("researcher")
     assert [m["content"] for m in history if m["role"] == "user"] == ["task one", "task two"]
+
+
+def test_parallel_agent_fans_out_and_combines_results(tmp_path):
+    router = FakeRouter()
+    agents_config = {
+        "defaults": {"fallback_chain": "default"},
+        "agents": {"reviewer": {"fallback_chain": "fanout", "mode": "on-demand"}},
+    }
+    providers_config = {
+        "fallback_chains": {
+            "fanout": {
+                "mode": "parallel",
+                "members": [
+                    {"provider": "local", "model": "qwen3.5-0.8b"},
+                    {"provider": "anthropic", "model": "claude-sonnet-5"},
+                ],
+            }
+        }
+    }
+    manager = SkillManager([REPO_SKILLS_DIR])
+    manager.discover()
+    memory = SessionStore(user_id="test", db_dir=tmp_path)
+    orchestrator = Orchestrator(
+        router=router, skills=manager, memory=memory, agents_config=agents_config, providers_config=providers_config
+    )
+
+    result = orchestrator.dispatch("reviewer", "review this PR")
+
+    # local succeeded, anthropic has no transport (FakeRouter mirrors that boundary) —
+    # a partial success still counts as a successful dispatch
+    assert result.error is None
+    assert "local/qwen3.5-0.8b" in result.result.output
+    assert "ok" in result.result.output
+    assert "anthropic/claude-sonnet-5" in result.result.output
+    assert len(result.result.metadata["parallel"]) == 2
+
+
+def test_parallel_agent_all_members_failing_is_reported_as_error(tmp_path):
+    router = FakeRouter()
+    agents_config = {
+        "defaults": {},
+        "agents": {"reviewer": {"fallback_chain": "fanout", "mode": "on-demand"}},
+    }
+    providers_config = {
+        "fallback_chains": {
+            "fanout": {
+                "mode": "parallel",
+                "members": [
+                    {"provider": "anthropic", "model": "claude-sonnet-5"},
+                    {"provider": "gemini", "model": "gemini-2.5-flash"},
+                ],
+            }
+        }
+    }
+    manager = SkillManager([REPO_SKILLS_DIR])
+    manager.discover()
+    memory = SessionStore(user_id="test", db_dir=tmp_path)
+    orchestrator = Orchestrator(
+        router=router, skills=manager, memory=memory, agents_config=agents_config, providers_config=providers_config
+    )
+
+    result = orchestrator.dispatch("reviewer", "review this PR")
+
+    assert result.error is not None
+    assert "all parallel members failed" in result.error

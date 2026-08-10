@@ -1,13 +1,16 @@
-"""Resolves an agent's (provider, model) from config/agents.yaml +
-config/providers.yaml, per the order defined in ARCHITECTURE.md section 4.2:
-explicit {provider, model} pin -> named fallback_chain's first entry ->
-defaults.fallback_chain's first entry. Sub-agents resolve independently of
-their parent — nothing cascades unless the child omits its own setting.
+"""Resolves an agent's model assignment from config/agents.yaml +
+config/providers.yaml, per ARCHITECTURE.md section 4.2: explicit
+{provider, model} pin -> named fallback_chain -> defaults.fallback_chain.
+Sub-agents resolve independently of their parent.
 
-Only the *primary* entry of a fallback chain is resolved here — walking the
-rest of the chain on error, rotating keys, and running `mode: parallel`
-chains concurrently are Phase 4 scope (ROADMAP.md); this module only needs
-to answer "which (provider, model) does this agent use right now."
+A pin resolves to a single-entry `chain`. A named sequential fallback_chain
+(a YAML list) resolves to `chain`, walked in order by
+ProviderRouter.chat_with_fallback() on failure (ROADMAP.md Phase 4). A
+`mode: parallel` chain (a YAML mapping with a `members` list) resolves to
+`parallel_members` instead, fanned out concurrently by
+ProviderRouter.chat_parallel(). Exactly one of chain/parallel_members is
+set. `.provider`/`.model` always reflect the primary/first entry, for
+display (e.g. `yozhan agents`).
 """
 
 from __future__ import annotations
@@ -29,6 +32,8 @@ class ResolvedAgent:
     provider: str
     model: str
     sandbox: str
+    chain: list[dict] | None = None
+    parallel_members: list[dict] | None = None
 
 
 def resolve_agent(
@@ -45,8 +50,12 @@ def resolve_agent(
     spec = agents[agent_name]
     defaults = agents_config.get("defaults", {})
 
+    chain: list[dict] | None = None
+    parallel_members: list[dict] | None = None
+
     if "provider" in spec and "model" in spec:
         provider, model = spec["provider"], spec["model"]
+        chain = [{"provider": provider, "model": model}]
     else:
         chain_name = spec.get("fallback_chain", defaults.get("fallback_chain"))
         if not chain_name:
@@ -59,11 +68,17 @@ def resolve_agent(
                 f"fallback_chain '{chain_name}' referenced by agent '{agent_name}' "
                 "not found in config/providers.yaml"
             )
-        chain = chains[chain_name]
-        entries = chain["members"] if isinstance(chain, dict) and chain.get("mode") == "parallel" else chain
-        if not entries:
-            raise AgentConfigError(f"fallback_chain '{chain_name}' is empty")
-        provider, model = entries[0]["provider"], entries[0]["model"]
+        chain_def = chains[chain_name]
+        if isinstance(chain_def, dict) and chain_def.get("mode") == "parallel":
+            parallel_members = chain_def.get("members") or []
+            if not parallel_members:
+                raise AgentConfigError(f"parallel fallback_chain '{chain_name}' has no members")
+            provider, model = parallel_members[0]["provider"], parallel_members[0]["model"]
+        else:
+            chain = chain_def or []
+            if not chain:
+                raise AgentConfigError(f"fallback_chain '{chain_name}' is empty")
+            provider, model = chain[0]["provider"], chain[0]["model"]
 
     return ResolvedAgent(
         name=agent_name,
@@ -72,4 +87,6 @@ def resolve_agent(
         provider=provider,
         model=model,
         sandbox=spec.get("sandbox", defaults.get("sandbox", "non-privileged-only")),
+        chain=chain,
+        parallel_members=parallel_members,
     )

@@ -1,8 +1,9 @@
 """ChatAgent: the concrete BaseAgent every named agent in config/agents.yaml
-runs as. Runs a tool-calling loop against its resolved (provider, model)
-(see resolve.py), backed by SkillManager (callable tools) and a
-MemoryBackend (persisted conversation history). See ARCHITECTURE.md
-sections 3.2-3.4.
+runs as. Runs a tool-calling loop against its resolved model assignment —
+either a direct (provider, model) pin or a sequential fallback `chain`
+(ROADMAP.md Phase 4; see resolve.py) — backed by SkillManager (callable
+tools) and a MemoryBackend (persisted conversation history).
+See ARCHITECTURE.md sections 3.2-3.4.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ import json
 
 from yozhan_runtime.agents.base import AgentResult, BaseAgent
 from yozhan_runtime.memory.store import MemoryBackend
-from yozhan_runtime.providers.router import ProviderRouter
+from yozhan_runtime.providers.router import ChatResult, ProviderRouter
 from yozhan_runtime.skills.manager import SkillManager
 
 
@@ -27,6 +28,7 @@ class ChatAgent(BaseAgent):
         session_id: str = "default",
         provider: str = "local",
         model: str | None = None,
+        chain: list[dict] | None = None,
         max_tool_iterations: int = 5,
     ):
         self.router = router
@@ -35,7 +37,13 @@ class ChatAgent(BaseAgent):
         self.session_id = session_id
         self.provider = provider
         self.model = model
+        self.chain = chain
         self.max_tool_iterations = max_tool_iterations
+
+    def _call_model(self, messages: list[dict], tools: list[dict]) -> ChatResult:
+        if self.chain:
+            return self.router.chat_with_fallback(self.chain, messages, tools=tools or None)
+        return self.router.chat(self.provider, self.model, messages, tools=tools or None)
 
     def run(self, task: str, context: dict | None = None) -> AgentResult:
         self.memory.append_message(self.session_id, "user", task)
@@ -43,7 +51,7 @@ class ChatAgent(BaseAgent):
         tools = self.skills.as_openai_tools()
 
         for _ in range(self.max_tool_iterations):
-            result = self.router.chat(self.provider, self.model, messages, tools=tools or None)
+            result = self._call_model(messages, tools)
 
             if result.tool_calls:
                 messages.append(

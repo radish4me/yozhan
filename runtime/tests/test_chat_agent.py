@@ -20,6 +20,19 @@ class FakeRouter:
         return self._responses.pop(0)
 
 
+class ChainFakeRouter:
+    """Only implements chat_with_fallback — used to verify ChatAgent routes
+    through it (instead of plain .chat()) whenever a `chain` is configured."""
+
+    def __init__(self, response: ChatResult):
+        self.response = response
+        self.chains_seen: list[list[dict]] = []
+
+    def chat_with_fallback(self, chain, messages, tools=None, timeout=120.0):
+        self.chains_seen.append(chain)
+        return self.response
+
+
 def make_skills():
     manager = SkillManager([REPO_SKILLS_DIR])
     manager.discover()
@@ -85,3 +98,15 @@ def test_exceeding_tool_iteration_limit_returns_fallback(tmp_path):
 
     assert "tool-call limit" in result.output
     assert result.metadata.get("truncated") is True
+
+
+def test_chain_configured_agent_dispatches_via_fallback_walking(tmp_path):
+    router = ChainFakeRouter(ChatResult(provider="gemini", model="gemini-2.5-flash", content="via fallback chain"))
+    memory = SessionStore(user_id="test", db_dir=tmp_path)
+    chain = [{"provider": "anthropic", "model": "claude-sonnet-5"}, {"provider": "gemini", "model": "gemini-2.5-flash"}]
+    agent = ChatAgent(router=router, skills=make_skills(), memory=memory, session_id="s1", chain=chain)
+
+    result = agent.run("hi")
+
+    assert result.output == "via fallback chain"
+    assert router.chains_seen == [chain]

@@ -47,6 +47,15 @@ providers:
       - env: OPENAI_API_KEY
     models: [gpt-5.1, gpt-5.1-mini]
 
+  # Any other OpenAI-compatible endpoint (self-hosted, another VPS, a
+  # fine-tune host, ...) — uncomment and point base_url at it:
+  # custom_vps:
+  #   type: openai_compatible
+  #   base_url: https://models.example.internal/v1
+  #   api_keys:
+  #     - env: CUSTOM_VPS_KEY
+  #   models: [my-finetune-7b]
+
 # Ordered fallback chains, tried top-to-bottom on error/rate-limit/timeout.
 # Referenced by name from config/agents.yaml. `mode: parallel` chains run
 # every member concurrently instead of sequentially (multi-model fan-out).
