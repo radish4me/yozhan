@@ -102,6 +102,32 @@ numbered keys per provider enable automatic rotation — see
 for key/model/fallback-chain edits; the router re-reads config on next
 dispatch.
 
+### Enabling the Telegram channel and pairing new users
+
+Set `TELEGRAM_BOT_TOKEN` in `.env` (create a bot via
+[@BotFather](https://t.me/BotFather) to get one) and `GATEWAY_ADMIN_TOKEN`
+(any long random string — it protects the admin-only pairing endpoints).
+Restart the gateway service to pick them up.
+
+The Gateway never trusts an unknown sender by default. The first time
+someone messages the bot, they get a short-lived pairing code back instead
+of a reply; approve it as the admin from a shell with `GATEWAY_ADMIN_TOKEN`
+set:
+
+```bash
+GATEWAY_URL=http://localhost:3000 GATEWAY_ADMIN_TOKEN=<your token> \
+  npm run pairing --prefix gateway -- list
+GATEWAY_URL=http://localhost:3000 GATEWAY_ADMIN_TOKEN=<your token> \
+  npm run pairing --prefix gateway -- approve <CODE>
+```
+
+Once approved, that Telegram user's messages round-trip through the same
+Agent Runtime `/chat` endpoint the CLI uses, in their own persisted session
+(`telegram:<chatId>`) — conversation history and tool use behave identically
+to `yozhan chat`. Additional channels (Discord, Slack, ...) plug into the
+same `ChannelAdapter` interface (`gateway/src/channels/types.ts`) and reuse
+this same pairing flow — see ROADMAP.md Phase 7.
+
 ### GPU hosts
 
 ```bash

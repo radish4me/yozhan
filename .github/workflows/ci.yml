@@ -25,3 +25,4 @@ jobs:
           node-version: "22"
       - run: npm install --prefix gateway
       - run: npm run build --prefix gateway
+      - run: npm test --prefix gateway

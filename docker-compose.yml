@@ -37,6 +37,9 @@ services:
     environment:
       - RUNTIME_URL=http://runtime:8787
       - PORT=${GATEWAY_PORT:-3000}
+      - GATEWAY_DATA_DIR=/app/gateway/data
+    volumes:
+      - gateway_data:/app/gateway/data
     ports:
       - "${GATEWAY_PORT:-3000}:3000"
     depends_on: [runtime]
@@ -46,6 +49,7 @@ volumes:
   llama_cache:
   runtime_data:
   runtime_workspace:
+  gateway_data:
 
 networks:
   yozhan_internal:
