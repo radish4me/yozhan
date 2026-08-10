@@ -1,0 +1,46 @@
+services:
+  llama-server:
+    build:
+      context: .
+      dockerfile: docker/llama.Dockerfile
+    environment:
+      - LLAMA_CACHE=/models
+      - HF_TOKEN=${HF_TOKEN:-}
+      - MODEL_ENDPOINT=${MODEL_ENDPOINT:-}
+      - LOCAL_DEFAULT_MODEL=${LOCAL_DEFAULT_MODEL:-qwen3.5-0.8b}
+    volumes:
+      - llama_cache:/models
+    networks: [yozhan_internal]
+
+  runtime:
+    build:
+      context: .
+      dockerfile: docker/runtime.Dockerfile
+    env_file: .env
+    environment:
+      - LLAMA_SERVER_URL=http://llama-server:8080/v1
+    volumes:
+      - ./config:/app/config
+      - runtime_data:/app/data
+    depends_on: [llama-server]
+    networks: [yozhan_internal]
+
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/gateway.Dockerfile
+    env_file: .env
+    environment:
+      - RUNTIME_URL=http://runtime:8787
+      - PORT=${GATEWAY_PORT:-3000}
+    ports:
+      - "${GATEWAY_PORT:-3000}:3000"
+    depends_on: [runtime]
+    networks: [yozhan_internal]
+
+volumes:
+  llama_cache:
+  runtime_data:
+
+networks:
+  yozhan_internal:

@@ -1,0 +1,29 @@
+# Per-agent and per-sub-agent model assignment. See ARCHITECTURE.md section 4.2.
+# Resolution order per agent: explicit {provider, model} pin -> named
+# fallback_chain -> defaults.fallback_chain. Sub-agents override independently
+# of their parent; nothing cascades unless a child omits its own setting.
+
+defaults:
+  fallback_chain: default
+  sandbox: non-privileged-only
+
+agents:
+  orchestrator:
+    fallback_chain: default
+    mode: on-demand
+
+  researcher:
+    subagent_of: orchestrator
+    fallback_chain: local_first
+    mode: on-demand
+
+  coder:
+    subagent_of: orchestrator
+    provider: anthropic
+    model: claude-sonnet-5
+    mode: on-demand
+
+  reviewer:
+    subagent_of: orchestrator
+    fallback_chain: cheap_parallel_fanout
+    mode: on-demand

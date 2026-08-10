@@ -1,0 +1,8 @@
+# Force LF line endings for everything script-like that runs on Linux
+# (containers, the bare-metal installer), regardless of a contributor's local
+# git autocrlf setting.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

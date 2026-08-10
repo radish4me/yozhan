@@ -1,0 +1,69 @@
+# Provider, model, and API-key configuration. See ARCHITECTURE.md section 4.1
+# for the full schema explanation. Edit this file directly — no code change
+# needed to add a model, add a key, or reorder a fallback chain.
+
+providers:
+  local:
+    type: llama_cpp
+    base_url: http://llama-server:8080/v1
+    models:
+      - id: qwen3.5-0.8b
+        hf: Qwen/Qwen3.5-0.8B-GGUF:Q4_K_M
+      - id: lfm2.5
+        hf: LiquidAI/LFM2.5-GGUF:Q4_K_M
+      - id: agents-a1-4b
+        hf: SomeOrg/Agents-A1-4B-Q4_K_M-GGUF
+    default_model: ${LOCAL_DEFAULT_MODEL:-qwen3.5-0.8b}
+
+  anthropic:
+    type: anthropic
+    api_keys:
+      - env: ANTHROPIC_API_KEY_1
+      - env: ANTHROPIC_API_KEY_2
+    models: [claude-sonnet-5, claude-haiku-4-5]
+
+  gemini:
+    type: gemini
+    api_keys:
+      - env: GEMINI_API_KEY_1
+      - env: GEMINI_API_KEY_2
+    models: [gemini-2.5-flash, gemini-2.5-pro]
+
+  openrouter:
+    type: openrouter
+    api_keys:
+      - env: OPENROUTER_API_KEY
+    models: [qwen/qwen-2.5-coder, google/gemini-flash-1.5, x-ai/grok-4]
+
+  grok:
+    type: grok
+    api_keys:
+      - env: GROK_API_KEY
+    models: [grok-4]
+
+  openai:
+    type: openai
+    api_keys:
+      - env: OPENAI_API_KEY
+    models: [gpt-5.1, gpt-5.1-mini]
+
+# Ordered fallback chains, tried top-to-bottom on error/rate-limit/timeout.
+# Referenced by name from config/agents.yaml. `mode: parallel` chains run
+# every member concurrently instead of sequentially (multi-model fan-out).
+fallback_chains:
+  default:
+    - {provider: anthropic, model: claude-sonnet-5}
+    - {provider: gemini, model: gemini-2.5-flash}
+    - {provider: openrouter, model: qwen/qwen-2.5-coder}
+    - {provider: local, model: qwen3.5-0.8b}
+
+  local_first:
+    - {provider: local, model: qwen3.5-0.8b}
+    - {provider: openrouter, model: google/gemini-flash-1.5}
+
+  cheap_parallel_fanout:
+    mode: parallel
+    members:
+      - {provider: openrouter, model: qwen/qwen-2.5-coder}
+      - {provider: gemini, model: gemini-2.5-flash}
+      - {provider: local, model: qwen3.5-0.8b}

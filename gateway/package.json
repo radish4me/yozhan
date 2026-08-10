@@ -1,0 +1,22 @@
+{
+  "name": "yozhan-gateway",
+  "version": "0.1.0",
+  "description": "yozhan channel gateway: pairing/auth, channel adapters, sandboxed tool execution, dashboard API",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0"
+  }
+}

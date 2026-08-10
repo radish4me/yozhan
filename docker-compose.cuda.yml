@@ -1,0 +1,15 @@
+# GPU override: docker compose -f docker-compose.yml -f docker-compose.cuda.yml up --build
+services:
+  llama-server:
+    build:
+      context: .
+      dockerfile: docker/llama.Dockerfile
+      args:
+        LLAMA_BUILD: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
