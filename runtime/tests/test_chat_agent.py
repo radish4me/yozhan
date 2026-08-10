@@ -15,7 +15,7 @@ class FakeRouter:
         self._responses = list(responses)
         self.calls: list[list[dict]] = []
 
-    def chat_local(self, messages, model=None, tools=None, timeout=120.0):
+    def chat(self, provider, model, messages, tools=None, timeout=120.0):
         self.calls.append(messages)
         return self._responses.pop(0)
 

@@ -1,8 +1,9 @@
 """Resolves a provider/model reference (or a fallback chain) to an actual
-OpenAI-compatible chat completion call. Phase 1 scope: local llama.cpp only,
-sequential fallback. Phase 2 adds OpenAI-style `tools` passthrough for skill
-tool-calling. Multi-key rotation and parallel fan-out land in Phase 4 per
-ROADMAP.md.
+OpenAI-compatible chat completion call. `chat()` is the dispatch seam every
+agent goes through: today only the `local` provider (llama.cpp) has real
+transport wired up. Any other provider name resolves correctly (Phase 3's
+per-agent model assignment) but raises ProviderError until Phase 4 wires
+its HTTP client, key rotation, and fallback-chain walking per ROADMAP.md.
 """
 
 from __future__ import annotations
@@ -39,6 +40,23 @@ class ProviderRouter:
 
     def default_local_model(self) -> str:
         return self.config["providers"]["local"]["default_model"]
+
+    def chat(
+        self,
+        provider: str,
+        model: str | None,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        timeout: float = 120.0,
+    ) -> ChatResult:
+        """Dispatches to the transport for `provider`. See module docstring."""
+        if provider == "local":
+            return self.chat_local(messages, model=model, tools=tools, timeout=timeout)
+        raise ProviderError(
+            f"provider '{provider}' has no transport implemented yet — "
+            "multi-provider dispatch (keys, fallback walking, parallel fan-out) "
+            "lands in Phase 4 (see ROADMAP.md)"
+        )
 
     def chat_local(
         self,

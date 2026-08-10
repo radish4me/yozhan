@@ -1,6 +1,8 @@
-"""yozhan CLI. Phase 2: `yozhan chat` is a full ChatAgent session (tool-calling
-+ persisted history via SessionStore); `yozhan serve` runs the HTTP API the
-Gateway will call starting Phase 5.
+"""yozhan CLI. `yozhan chat` is a single ChatAgent session (Phase 2).
+`yozhan agents` and `yozhan orchestrate` are Phase 3: showing each
+configured agent's resolved model assignment and dispatching tasks across
+several of them, each independently model-assigned per config/agents.yaml.
+`yozhan serve` runs the HTTP API the Gateway will call starting Phase 5.
 """
 
 from __future__ import annotations
@@ -8,7 +10,9 @@ from __future__ import annotations
 import click
 
 from yozhan_runtime.agents.chat_agent import ChatAgent
-from yozhan_runtime.config import skills_dirs
+from yozhan_runtime.agents.orchestrator import Orchestrator
+from yozhan_runtime.agents.resolve import AgentConfigError, resolve_agent
+from yozhan_runtime.config import load_agents, skills_dirs
 from yozhan_runtime.memory.store import SessionStore
 from yozhan_runtime.providers.router import ProviderError, ProviderRouter
 from yozhan_runtime.skills.manager import SkillManager
@@ -47,6 +51,49 @@ def chat(model: str | None, session: str):
             click.echo(f"error: {exc}", err=True)
             continue
         click.echo(f"yozhan> {result.output}")
+    memory.close()
+
+
+@main.command(name="agents")
+def list_agents():
+    """List every agent in config/agents.yaml with its resolved provider/model."""
+    agents_config = load_agents()
+    for name in agents_config.get("agents", {}):
+        try:
+            resolved = resolve_agent(name, agents_config)
+        except AgentConfigError as exc:
+            click.echo(f"{name:<16} ERROR: {exc}", err=True)
+            continue
+        parent = resolved.subagent_of or "-"
+        click.echo(
+            f"{name:<16} mode={resolved.mode:<10} subagent_of={parent:<14} "
+            f"-> {resolved.provider}/{resolved.model}"
+        )
+
+
+@main.command()
+@click.option(
+    "--agent",
+    "assignments",
+    type=(str, str),
+    multiple=True,
+    required=True,
+    help='Agent name + task, repeatable: --agent researcher "task" --agent coder "task"',
+)
+def orchestrate(assignments: tuple[tuple[str, str], ...]):
+    """Dispatch tasks to named agents, each resolving its own model assignment."""
+    router = ProviderRouter()
+    skills = SkillManager(skills_dirs())
+    skills.discover()
+    memory = SessionStore()
+    orchestrator = Orchestrator(router=router, skills=skills, memory=memory)
+
+    for dispatched in orchestrator.dispatch_many(list(assignments)):
+        click.echo(f"[{dispatched.agent}] {dispatched.provider}/{dispatched.model}")
+        if dispatched.error:
+            click.echo(f"  error: {dispatched.error}", err=True)
+        else:
+            click.echo(f"  -> {dispatched.result.output}")
     memory.close()
 
 

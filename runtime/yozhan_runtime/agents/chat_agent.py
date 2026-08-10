@@ -1,6 +1,8 @@
-"""ChatAgent: Phase 2's concrete BaseAgent. Runs a tool-calling loop against
-the local model, backed by SkillManager (callable tools) and a MemoryBackend
-(persisted conversation history). See ARCHITECTURE.md sections 3.2-3.4.
+"""ChatAgent: the concrete BaseAgent every named agent in config/agents.yaml
+runs as. Runs a tool-calling loop against its resolved (provider, model)
+(see resolve.py), backed by SkillManager (callable tools) and a
+MemoryBackend (persisted conversation history). See ARCHITECTURE.md
+sections 3.2-3.4.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ class ChatAgent(BaseAgent):
         skills: SkillManager,
         memory: MemoryBackend,
         session_id: str = "default",
+        provider: str = "local",
         model: str | None = None,
         max_tool_iterations: int = 5,
     ):
@@ -30,6 +33,7 @@ class ChatAgent(BaseAgent):
         self.skills = skills
         self.memory = memory
         self.session_id = session_id
+        self.provider = provider
         self.model = model
         self.max_tool_iterations = max_tool_iterations
 
@@ -39,7 +43,7 @@ class ChatAgent(BaseAgent):
         tools = self.skills.as_openai_tools()
 
         for _ in range(self.max_tool_iterations):
-            result = self.router.chat_local(messages, model=self.model, tools=tools or None)
+            result = self.router.chat(self.provider, self.model, messages, tools=tools or None)
 
             if result.tool_calls:
                 messages.append(
