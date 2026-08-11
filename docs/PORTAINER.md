@@ -62,7 +62,7 @@ Scroll to **Environment variables** → **Add an environment variable** for each
 | Name | Example | What it does |
 |---|---|---|
 | `GATEWAY_PORT` | `3000` | Host port for the dashboard/API |
-| `LLAMA_HF_MODEL` | `Qwen/Qwen3.5-0.8B-GGUF:Q4_K_M` | Which GGUF model to serve |
+| `LLAMA_HF_MODEL` | `unsloth/Qwen3.5-0.8B-GGUF:Q4_K_M` | Which GGUF model to serve |
 | `LLAMA_THREADS` | `2` | Match your vCPU count |
 | `LLAMA_CONTEXT_SIZE` | `4096` | Lower it to save RAM |
 | `TELEGRAM_BOT_TOKEN` | `123456:ABC…` | Turns on the Telegram channel |
@@ -182,11 +182,14 @@ environment variables alone and needs none of this.
 
 The floor is **2-4 vCPU / 4-8 GB RAM**.
 
-| Model | RAM for the model | Verdict at 4 GB |
+| Model | Download | Verdict at 4 GB |
 |---|---|---|
-| `Qwen/Qwen3.5-0.8B-GGUF:Q4_K_M` | ~1 GB | Comfortable — the default |
-| `LiquidAI/LFM2.5-GGUF:Q4_K_M` | ~1.5 GB | Workable |
-| `SomeOrg/Agents-A1-4B-Q4_K_M-GGUF` | ~3 GB | Tight. Wants 8 GB |
+| `unsloth/Qwen3.5-0.8B-GGUF:Q4_K_M` | 507 MB | Comfortable — the default |
+| `LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M` | 697 MB | Workable |
+| `InternScience/Agents-A1-4B-Q4_K_M-GGUF:Q4_K_M` | 2.5 GB | Tight. Wants 8 GB |
+
+Add roughly 20-30% on top of the download for runtime memory, plus whatever
+your context size costs.
 
 **Switch that agent to a remote provider instead of upsizing the VPS** when
 you need a model above ~4B, when several agents run local inference at once
@@ -218,6 +221,24 @@ anywhere it shouldn't be, rotate it — Telegram tokens via @BotFather →
 **`gateway` restarts / stack won't deploy**
 `GATEWAY_ADMIN_TOKEN` isn't set. It's deliberately required — the stack
 refuses to come up rather than exposing unauthenticated admin endpoints.
+
+**`llama-server` restart-loops with `GET failed (401): Invalid username or
+password` / `failed to resolve commit for <repo>`**
+
+The Hugging Face repo doesn't exist, is private, or is gated. Hugging Face
+answers 401 rather than 404 for a repo you can't see, so this looks like an
+auth problem even when no credentials are involved — an empty `HF_TOKEN` is
+*not* the cause.
+
+Check the repo id resolves anonymously:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://huggingface.co/api/models/YOUR/REPO
+```
+
+`200` means it's fine; `401` means fix `LLAMA_HF_MODEL`. The three shipped
+options are in the [Sizing](#sizing) table. For a gated repo, set `HF_TOKEN`
+to a token that has been granted access.
 
 **`llama-server` unhealthy for a long time on first start**
 It's downloading the model. Check: Containers → `llama-server` → **Logs**.

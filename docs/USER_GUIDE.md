@@ -129,9 +129,9 @@ providers:
     base_url: http://llama-server:8080/v1
     models:
       - id: qwen3.5-0.8b
-        hf: Qwen/Qwen3.5-0.8B-GGUF:Q4_K_M
+        hf: unsloth/Qwen3.5-0.8B-GGUF:Q4_K_M
       - id: lfm2.5
-        hf: LiquidAI/LFM2.5-GGUF:Q4_K_M
+        hf: LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M
     default_model: ${LOCAL_DEFAULT_MODEL:-qwen3.5-0.8b}
 
   gemini:

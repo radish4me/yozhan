@@ -177,11 +177,11 @@ providers:
     base_url: http://llama-server:8080/v1   # OpenAI-compatible
     models:
       - id: qwen3.5-0.8b
-        hf: Qwen/Qwen3.5-0.8B-GGUF:Q4_K_M
+        hf: unsloth/Qwen3.5-0.8B-GGUF:Q4_K_M
       - id: lfm2.5
-        hf: LiquidAI/LFM2.5-GGUF:Q4_K_M
+        hf: LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M
       - id: agents-a1-4b
-        hf: SomeOrg/Agents-A1-4B-Q4_K_M-GGUF
+        hf: InternScience/Agents-A1-4B-Q4_K_M-GGUF:Q4_K_M
     default_model: qwen3.5-0.8b   # global default (see rationale below)
 
   anthropic:
