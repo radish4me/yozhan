@@ -47,7 +47,7 @@ multi-provider/multi-key router with fallback chains and parallel fan-out,
 a channel gateway (Telegram, Discord, Slack) with pairing, a self-improving
 learning loop with approval-gated skill authoring, scheduled/continuous
 agents, sandboxed tool execution, a React dashboard, and cost/latency
-reporting.
+reporting. Phase 8 adds A2A agent-to-agent interop (off by default).
 
 ## Project layout
 

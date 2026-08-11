@@ -26,6 +26,30 @@ learning:
   min_tool_calls: 3
   fallback_chain: local_first   # the reviewer itself is a cheap background job
 
+# Agent-to-agent interop (ROADMAP.md Phase 8). Off by default: enabling it
+# both exposes this agent to other agents and lets it call out to them.
+a2a:
+  enabled: false
+
+  # --- inbound: other agents talking to yozhan ---
+  # Serves an agent card at /.well-known/agent-card.json and accepts JSON-RPC
+  # `message/send` at /a2a. Only skills marked `a2a: true` are advertised.
+  require_token: true             # bearer token from the env var below
+  token_env: A2A_INBOUND_TOKEN
+  agent_name: yozhan
+  agent_description: A self-hosted personal AI assistant.
+  public_url: http://localhost:8787/a2a
+
+  # --- outbound: yozhan talking to other agents ---
+  # Only peers listed here are reachable. There is deliberately no way for the
+  # model to supply an arbitrary URL — that would be an SSRF primitive aimed
+  # at whatever a prompt names, including your private network.
+  peers: []
+  # peers:
+  #   - name: research-bot
+  #     url: https://peer.example.com/a2a
+  #     token_env: A2A_PEER_RESEARCH_TOKEN
+
 agents:
   orchestrator:
     fallback_chain: default

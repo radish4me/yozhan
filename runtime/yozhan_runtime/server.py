@@ -18,6 +18,8 @@ from yozhan_runtime.learning.reviewer import apply_proposal, reviewer_from_confi
 from yozhan_runtime.memory.curated import CuratedMemory
 from yozhan_runtime.memory.store import SessionStore
 from yozhan_runtime.providers.router import ProviderError, ProviderRouter
+from yozhan_runtime.a2a.card import build_agent_card
+from yozhan_runtime.a2a.server import build_router as build_a2a_router
 from yozhan_runtime.sandbox.policy import sandbox_from_config
 from yozhan_runtime.skills.manager import SkillManager
 
@@ -181,3 +183,35 @@ def orchestrate(request: OrchestrateRequest):
         }
         for r in results
     ]
+
+
+# --- A2A (ROADMAP.md Phase 8) -------------------------------------------
+# Mounted only when explicitly enabled: turning this on exposes the agent to
+# other agents, so it is never on by accident.
+_a2a_config = _agents_config.get("a2a") or {}
+if _a2a_config.get("enabled", False):
+
+    def _run_a2a_task(text: str, session_id: str) -> str:
+        agent = ChatAgent(
+            router=_router,
+            skills=_skills,
+            memory=_memory,
+            session_id=session_id,
+            curated=_curated,
+            agent_name="a2a",
+        )
+        try:
+            return agent.run(text).output
+        except ProviderError as exc:
+            return f"error: {exc}"
+
+    def _agent_card() -> dict:
+        return build_agent_card(
+            name=_a2a_config.get("agent_name", "yozhan"),
+            description=_a2a_config.get("agent_description", "A self-hosted personal AI assistant."),
+            url=_a2a_config.get("public_url", "http://localhost:8787/a2a"),
+            skills=_skills.discovered(),
+            requires_auth=_a2a_config.get("require_token", True),
+        )
+
+    app.include_router(build_a2a_router(_a2a_config, _agent_card, _run_a2a_task))

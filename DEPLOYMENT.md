@@ -211,6 +211,45 @@ tab shows the same data. A model with no `pricing:` block in
 not free. Add a `pricing:` block for any remote model whose spend you want
 tracked.
 
+### Agent-to-agent (A2A)
+
+Off by default. Enabling it in `config/agents.yaml` both exposes this agent to
+other agents and lets it call out to them, so turn it on deliberately:
+
+```yaml
+a2a:
+  enabled: true
+  require_token: true
+  token_env: A2A_INBOUND_TOKEN
+  public_url: https://yozhan.example.com/a2a
+  peers:
+    - name: research-bot
+      url: https://peer.example.com/a2a
+      token_env: A2A_PEER_RESEARCH_TOKEN
+```
+
+Set `A2A_INBOUND_TOKEN` (and any peer tokens) in `.env`. Then:
+
+- Other agents fetch `GET /.well-known/agent-card.json` and post JSON-RPC
+  `message/send` to `/a2a` with `Authorization: Bearer <A2A_INBOUND_TOKEN>`.
+- yozhan reaches peers through the `a2a_peer` skill (`list`, `discover`,
+  `ask`).
+
+Three things to know before exposing this publicly:
+
+1. **Auth fails closed.** If `require_token: true` but the token env var
+   isn't set, requests are refused with a 503 rather than being allowed
+   through unauthenticated.
+2. **Only skills marked `a2a: true` are advertised** on the agent card.
+   Nothing is published by default.
+3. **Peers must be named in config.** There is no way for the model to pass
+   an arbitrary URL to an outbound call — otherwise a prompt could aim it at
+   your cloud metadata endpoint or an internal host.
+
+Text arriving from another agent is labelled untrusted before it reaches the
+agent loop. That reduces prompt-injection risk but does not eliminate it —
+treat an A2A peer with roughly the trust you'd extend to an anonymous user.
+
 ### GPU hosts
 
 ```bash

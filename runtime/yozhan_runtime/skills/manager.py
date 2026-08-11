@@ -40,6 +40,7 @@ class Skill:
     tool_run: Callable[..., str] | None = field(default=None, repr=False)
     tool_path: Path | None = None
     elevated: bool = False
+    a2a: bool = False
 
     def as_openai_tool(self) -> dict | None:
         if not self.tool_name:
@@ -97,6 +98,7 @@ class SkillManager:
             instructions=body,
             path=skill_dir,
             elevated=bool(frontmatter.get("elevated", False)),
+            a2a=bool(frontmatter.get("a2a", False)),
         )
 
         if frontmatter.get("tool"):

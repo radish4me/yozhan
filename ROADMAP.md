@@ -134,11 +134,32 @@ yozhan is released under the **MIT License**, copyright Radhakrishnan.
 - **Demo:** full v1 — multi-channel, dashboard-visible, scheduled agent
   running unattended, sandboxed tool execution enforced by config.
 
+## Phase 8 — A2A protocol (post-v1)
+
+**Goal:** yozhan can talk to other agents, and be talked to.
+
+Originally deferred past v1 (see below) and pulled forward once v1 landed.
+
+- **Inbound**: an Agent Card at `/.well-known/agent-card.json` and JSON-RPC
+  `message/send` at `/a2a`. Bearer-authenticated by default, and *fails
+  closed* — if a token is required but unset, requests are refused rather
+  than silently allowed. Only skills marked `a2a: true` are advertised, so a
+  private deployment doesn't publish its shape to anyone who can reach it.
+- **Outbound**: an `a2a_peer` skill for listing peers, fetching a peer's
+  card, and asking it a question. Peers must be **named in config** —
+  there is deliberately no way for the model to supply an arbitrary URL,
+  which would hand a language model an SSRF primitive aimed at whatever a
+  prompt names, including cloud metadata endpoints and private hosts.
+- **Trust boundary**: text arriving from a peer (inbound *and* outbound
+  replies) is labelled untrusted before it reaches the agent loop. Another
+  agent is not the user, and its output is evidence to weigh, not
+  instructions to follow.
+- Off by default (`a2a.enabled: false`): enabling it both exposes this agent
+  and lets it call out.
+- **Demo:** two yozhan instances, one asking the other a question over A2A.
+
 ## Out of scope for v1 (explicitly deferred)
 
-- A2A protocol support (Hermes Agent's agent-to-agent interop) — real and
-  useful, but not required for a self-hosted single-user/small-team
-  assistant; revisit post-v1 if federated agent use cases emerge.
 - Native desktop/mobile companion apps — dashboard (web) covers v1; native
   clients are a separate, larger effort.
 - Any Windows installer or PowerShell tooling — out of scope by project

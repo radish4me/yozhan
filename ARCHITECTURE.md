@@ -315,7 +315,7 @@ for local inference — documented further in `DEPLOYMENT.md`.
 | Skill self-authoring/patching from usage traces | Hermes Agent | Learning loop in Memory & Learning Store |
 | Curated `MEMORY.md`/`USER.md`, cross-session recall | Hermes Agent | Memory & Learning Store |
 | Multi-provider routing, per-(provider,model) credential resolution | Hermes Agent | Model Provider Router |
-| A2A protocol support | Hermes Agent | optional Gateway plugin (Phase 7+, not MVP) |
+| A2A protocol support | Hermes Agent | `runtime/yozhan_runtime/a2a/` — inbound agent card + JSON-RPC, outbound named-peer client (Phase 8) |
 
 ## 6. Internal transport
 
