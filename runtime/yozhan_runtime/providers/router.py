@@ -24,6 +24,7 @@ from yozhan_runtime.config import load_providers
 from yozhan_runtime.providers import transports
 from yozhan_runtime.providers.errors import ProviderError, ProviderHTTPStatusError
 from yozhan_runtime.providers.keyring import ROTATE_ON_STATUS, KeyRing
+from yozhan_runtime.providers.pricing import estimate_cost
 
 __all__ = ["ProviderError", "ProviderHTTPStatusError", "ChatResult", "ProviderRouter"]
 
@@ -41,6 +42,8 @@ class ChatResult:
     model: str
     content: str | None
     tool_calls: list[dict] | None = None
+    usage: dict | None = None
+    cost_usd: float | None = None
 
 
 class ProviderRouter:
@@ -85,12 +88,19 @@ class ProviderRouter:
             )
 
         call = self._build_call(provider, provider_type, provider_cfg, model, messages, tools, timeout)
-        content, tool_calls = self._call_with_key_rotation(provider, keyring, call)
-        return ChatResult(provider=provider, model=model, content=content, tool_calls=tool_calls)
+        content, tool_calls, usage = self._call_with_key_rotation(provider, keyring, call)
+        return ChatResult(
+            provider=provider,
+            model=model,
+            content=content,
+            tool_calls=tool_calls,
+            usage=usage,
+            cost_usd=estimate_cost(self.config, provider, model, usage),
+        )
 
     def _build_call(
         self, provider: str, provider_type: str, provider_cfg: dict, model, messages, tools, timeout
-    ) -> Callable[[str], tuple[str | None, list[dict] | None]]:
+    ) -> Callable[[str], transports.ChatPayload]:
         if provider_type == "anthropic":
             return lambda key: transports.anthropic_chat(key, model, messages, tools, timeout)
         if provider_type == "gemini":
@@ -106,8 +116,8 @@ class ProviderRouter:
 
     @staticmethod
     def _call_with_key_rotation(
-        provider: str, keyring: KeyRing, call: Callable[[str], tuple[str | None, list[dict] | None]]
-    ) -> tuple[str | None, list[dict] | None]:
+        provider: str, keyring: KeyRing, call: Callable[[str], transports.ChatPayload]
+    ) -> transports.ChatPayload:
         last_error: Exception | None = None
         for _ in range(len(keyring)):
             key = keyring.current()
@@ -140,12 +150,24 @@ class ProviderRouter:
         except httpx.HTTPError as exc:
             raise ProviderError(f"local provider request failed: {exc}") from exc
 
-        message = resp.json()["choices"][0]["message"]
+        data = resp.json()
+        message = data["choices"][0]["message"]
+        raw_usage = data.get("usage") or {}
+        usage = (
+            {
+                "prompt_tokens": raw_usage.get("prompt_tokens"),
+                "completion_tokens": raw_usage.get("completion_tokens"),
+            }
+            if raw_usage
+            else None
+        )
         return ChatResult(
             provider="local",
             model=model,
             content=message.get("content"),
             tool_calls=message.get("tool_calls"),
+            usage=usage,
+            cost_usd=estimate_cost(self.config, "local", model, usage),
         )
 
     def chat_with_fallback(

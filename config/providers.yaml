@@ -15,12 +15,19 @@ providers:
         hf: SomeOrg/Agents-A1-4B-Q4_K_M-GGUF
     default_model: ${LOCAL_DEFAULT_MODEL:-qwen3.5-0.8b}
 
+  # A model may be a bare string, or a mapping carrying an optional `pricing`
+  # block (USD per million tokens) used by the cost report (`yozhan costs`).
+  # A model with no pricing reports cost as unknown rather than as zero.
   anthropic:
     type: anthropic
     api_keys:
       - env: ANTHROPIC_API_KEY_1
       - env: ANTHROPIC_API_KEY_2
-    models: [claude-sonnet-5, claude-haiku-4-5]
+    models:
+      - id: claude-sonnet-5
+        pricing: {input_per_mtok: 3.0, output_per_mtok: 15.0}
+      - id: claude-haiku-4-5
+        pricing: {input_per_mtok: 1.0, output_per_mtok: 5.0}
 
   gemini:
     type: gemini

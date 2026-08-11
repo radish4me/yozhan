@@ -12,15 +12,23 @@ others in a multi-agent dispatch.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from yozhan_runtime.agents.base import AgentResult
 from yozhan_runtime.agents.chat_agent import ChatAgent
 from yozhan_runtime.agents.resolve import ResolvedAgent, resolve_agent
 from yozhan_runtime.config import load_agents, load_providers
+from yozhan_runtime.memory.curated import CuratedMemory
 from yozhan_runtime.memory.store import MemoryBackend
 from yozhan_runtime.providers.router import ProviderRouter
 from yozhan_runtime.skills.manager import SkillManager
+
+if TYPE_CHECKING:
+    from yozhan_runtime.learning.reviewer import LearningReviewer
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -40,12 +48,20 @@ class Orchestrator:
         memory: MemoryBackend,
         agents_config: dict | None = None,
         providers_config: dict | None = None,
+        curated: CuratedMemory | None = None,
+        reviewer: "LearningReviewer | None" = None,
     ):
         self.router = router
         self.skills = skills
         self.memory = memory
         self._agents_config = agents_config if agents_config is not None else load_agents()
         self._providers_config = providers_config if providers_config is not None else load_providers()
+        self.curated = curated
+        self.reviewer = reviewer
+
+    @property
+    def learning_config(self) -> dict:
+        return self._agents_config.get("learning", {}) or {}
 
     def dispatch(self, agent_name: str, task: str, session_id: str | None = None) -> DispatchResult:
         resolved = resolve_agent(agent_name, self._agents_config, self._providers_config)
@@ -63,9 +79,12 @@ class Orchestrator:
             memory=self.memory,
             session_id=session_id,
             chain=resolved.chain,
+            agent_name=agent_name,
+            curated=self.curated,
         )
         try:
             result = agent.run(task)
+            self.maybe_review(result.metadata.get("task_id"), session_id)
             return DispatchResult(agent=agent_name, provider=resolved.provider, model=resolved.model, result=result)
         except Exception as exc:  # one agent's failure shouldn't sink a multi-agent dispatch
             return DispatchResult(
@@ -110,6 +129,24 @@ class Orchestrator:
             model=resolved.model,
             result=AgentResult(output=combined, metadata={"parallel": per_model}),
         )
+
+    def maybe_review(self, task_id: str | None, session_id: str) -> int | None:
+        """Hands a finished task to the learning reviewer, if one is configured
+        and enabled. Returns a staged proposal id, or None.
+
+        Reviewing is strictly best-effort: a failure here (reviewer model
+        down, malformed proposal) must never turn a successful task into a
+        failed one, so everything is swallowed and logged."""
+        if task_id is None or self.reviewer is None:
+            return None
+        if not self.learning_config.get("enabled", False):
+            return None
+        try:
+            existing = [s.name for s in self.skills.discovered()]
+            return self.reviewer.review_task(task_id, session_id, existing_skills=existing)
+        except Exception as exc:
+            logger.warning("learning review failed for task %s: %s", task_id, exc)
+            return None
 
     def dispatch_many(self, assignments: list[tuple[str, str]]) -> list[DispatchResult]:
         """assignments: list of (agent_name, task) pairs."""

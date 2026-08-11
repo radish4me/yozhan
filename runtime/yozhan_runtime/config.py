@@ -34,10 +34,15 @@ def config_dir() -> Path:
 
 
 def skills_dirs() -> list[Path]:
-    """Built-in skills dir (repo `skills/` or $YOZHAN_SKILLS_DIR) + user overrides (~/.yozhan/skills)."""
+    """Built-in skills dir (repo `skills/` or $YOZHAN_SKILLS_DIR) + user overrides."""
     built_in = Path(os.environ.get("YOZHAN_SKILLS_DIR", "skills"))
-    user_dir = Path.home() / ".yozhan" / "skills"
-    return [built_in, user_dir]
+    return [built_in, user_skills_dir()]
+
+
+def user_skills_dir() -> Path:
+    """Where learning-loop-authored skills are written (never the repo's
+    built-in skills/ dir, so an approved proposal can't clobber a shipped skill)."""
+    return Path(os.environ.get("YOZHAN_USER_SKILLS_DIR", str(Path.home() / ".yozhan" / "skills")))
 
 
 def data_dir() -> Path:

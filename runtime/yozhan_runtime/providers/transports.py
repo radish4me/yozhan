@@ -1,8 +1,12 @@
 """Per-provider HTTP transports. Each `*_chat()` function makes one network
-call and returns (content, tool_calls) in the same shape ChatResult uses —
-ProviderRouter.chat() wraps that into a stamped ChatResult. Request/response
+call and returns a ChatPayload — (content, tool_calls, usage) — which
+ProviderRouter.chat() wraps into a stamped ChatResult. Request/response
 conversion is split into pure functions (`*_request_body` / `*_parse_response`)
 so the message-format mapping can be unit-tested without any network access.
+
+Token usage is normalized to OpenAI's {prompt_tokens, completion_tokens}
+regardless of what the provider calls it, so cost estimation (pricing.py) and
+trace logging have one shape to deal with.
 
 - OpenAI, OpenRouter, Grok, and any custom self-hosted endpoint are all
   OpenAI-compatible — one shared function handles all four.
@@ -21,6 +25,9 @@ from yozhan_runtime.providers.errors import ProviderError, ProviderHTTPStatusErr
 
 _ANTHROPIC_VERSION = "2023-06-01"
 _ANTHROPIC_MAX_TOKENS = 4096
+
+# (content, tool_calls, usage)
+ChatPayload = tuple[str | None, list[dict] | None, dict | None]
 
 
 def _raise_for_status(resp: httpx.Response, provider: str) -> None:
@@ -41,7 +48,7 @@ def openai_compatible_chat(
     messages: list[dict],
     tools: list[dict] | None,
     timeout: float,
-) -> tuple[str | None, list[dict] | None]:
+) -> ChatPayload:
     headers = {"Authorization": f"Bearer {api_key}"}
     payload: dict = {"model": model, "messages": messages}
     if tools:
@@ -51,8 +58,18 @@ def openai_compatible_chat(
     except httpx.HTTPError as exc:
         raise ProviderError(f"{provider} request failed: {exc}") from exc
     _raise_for_status(resp, provider)
-    message = resp.json()["choices"][0]["message"]
-    return message.get("content"), message.get("tool_calls")
+    data = resp.json()
+    message = data["choices"][0]["message"]
+    usage = data.get("usage")
+    normalized = (
+        {
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+        }
+        if usage
+        else None
+    )
+    return message.get("content"), message.get("tool_calls"), normalized
 
 
 # --- Anthropic Messages API -------------------------------------------------
@@ -110,7 +127,7 @@ def anthropic_request_body(model: str, messages: list[dict], tools: list[dict] |
     return body
 
 
-def anthropic_parse_response(data: dict) -> tuple[str | None, list[dict] | None]:
+def anthropic_parse_response(data: dict) -> ChatPayload:
     blocks = data.get("content", [])
     text_parts = [b["text"] for b in blocks if b.get("type") == "text"]
     tool_calls = [
@@ -119,12 +136,21 @@ def anthropic_parse_response(data: dict) -> tuple[str | None, list[dict] | None]
         if b.get("type") == "tool_use"
     ]
     content = "\n".join(text_parts) if text_parts else None
-    return content, (tool_calls or None)
+    raw_usage = data.get("usage") or {}
+    usage = (
+        {
+            "prompt_tokens": raw_usage.get("input_tokens"),
+            "completion_tokens": raw_usage.get("output_tokens"),
+        }
+        if raw_usage
+        else None
+    )
+    return content, (tool_calls or None), usage
 
 
 def anthropic_chat(
     api_key: str, model: str, messages: list[dict], tools: list[dict] | None, timeout: float
-) -> tuple[str | None, list[dict] | None]:
+) -> ChatPayload:
     headers = {"x-api-key": api_key, "anthropic-version": _ANTHROPIC_VERSION, "content-type": "application/json"}
     body = anthropic_request_body(model, messages, tools)
     try:
@@ -192,10 +218,19 @@ def gemini_request_body(messages: list[dict], tools: list[dict] | None) -> tuple
     return body, system_instruction
 
 
-def gemini_parse_response(data: dict) -> tuple[str | None, list[dict] | None]:
+def gemini_parse_response(data: dict) -> ChatPayload:
+    raw_usage = data.get("usageMetadata") or {}
+    usage = (
+        {
+            "prompt_tokens": raw_usage.get("promptTokenCount"),
+            "completion_tokens": raw_usage.get("candidatesTokenCount"),
+        }
+        if raw_usage
+        else None
+    )
     candidates = data.get("candidates") or []
     if not candidates:
-        return None, None
+        return None, None, usage
     parts = candidates[0].get("content", {}).get("parts", [])
     text_parts = [p["text"] for p in parts if "text" in p]
     tool_calls = [
@@ -207,12 +242,12 @@ def gemini_parse_response(data: dict) -> tuple[str | None, list[dict] | None]:
         if "functionCall" in p
     ]
     content = "\n".join(text_parts) if text_parts else None
-    return content, (tool_calls or None)
+    return content, (tool_calls or None), usage
 
 
 def gemini_chat(
     api_key: str, model: str, messages: list[dict], tools: list[dict] | None, timeout: float
-) -> tuple[str | None, list[dict] | None]:
+) -> ChatPayload:
     body, system_instruction = gemini_request_body(messages, tools)
     if system_instruction:
         body["systemInstruction"] = {"parts": [{"text": system_instruction}]}

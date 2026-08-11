@@ -60,7 +60,7 @@ def test_key_rotates_on_429_then_succeeds(monkeypatch):
         calls.append(api_key)
         if api_key == "gem-key-1":
             raise ProviderHTTPStatusError(429, "rate limited")
-        return "ok", None
+        return "ok", None, None
 
     monkeypatch.setattr("yozhan_runtime.providers.transports.gemini_chat", fake_gemini_chat)
     result = router.chat("gemini", "gemini-2.5-flash", [{"role": "user", "content": "hi"}])
@@ -103,7 +103,7 @@ def test_fallback_chain_walks_to_next_provider_on_failure(monkeypatch):
         lambda *a, **k: (_ for _ in ()).throw(ProviderHTTPStatusError(500, "boom")),
     )
     monkeypatch.setattr(
-        "yozhan_runtime.providers.transports.gemini_chat", lambda *a, **k: ("gemini saved the day", None)
+        "yozhan_runtime.providers.transports.gemini_chat", lambda *a, **k: ("gemini saved the day", None, None)
     )
 
     chain = [{"provider": "anthropic", "model": "claude-sonnet-5"}, {"provider": "gemini", "model": "gemini-2.5-flash"}]
@@ -132,9 +132,9 @@ def test_fallback_chain_raises_when_every_entry_fails(monkeypatch):
 def test_chat_parallel_dispatches_all_members_concurrently(monkeypatch):
     router = make_router(monkeypatch)
 
-    monkeypatch.setattr("yozhan_runtime.providers.transports.gemini_chat", lambda *a, **k: ("gemini result", None))
+    monkeypatch.setattr("yozhan_runtime.providers.transports.gemini_chat", lambda *a, **k: ("gemini result", None, None))
     monkeypatch.setattr(
-        "yozhan_runtime.providers.transports.openai_compatible_chat", lambda *a, **k: ("openrouter result", None)
+        "yozhan_runtime.providers.transports.openai_compatible_chat", lambda *a, **k: ("openrouter result", None, None)
     )
     monkeypatch.setattr(
         router, "chat_local", lambda messages, model=None, tools=None, timeout=120.0: ChatResult(
@@ -157,7 +157,7 @@ def test_chat_parallel_dispatches_all_members_concurrently(monkeypatch):
 def test_chat_parallel_partial_failure_does_not_raise(monkeypatch):
     router = make_router(monkeypatch)
 
-    monkeypatch.setattr("yozhan_runtime.providers.transports.gemini_chat", lambda *a, **k: ("ok", None))
+    monkeypatch.setattr("yozhan_runtime.providers.transports.gemini_chat", lambda *a, **k: ("ok", None, None))
     monkeypatch.setattr(
         "yozhan_runtime.providers.transports.openai_compatible_chat",
         lambda *a, **k: (_ for _ in ()).throw(ProviderHTTPStatusError(500, "boom")),

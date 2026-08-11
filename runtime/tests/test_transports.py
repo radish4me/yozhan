@@ -67,7 +67,7 @@ def test_anthropic_parse_response_extracts_text_and_tool_use():
             {"type": "tool_use", "id": "call_9", "name": "web_search", "input": {"query": "X"}},
         ]
     }
-    content, tool_calls = anthropic_parse_response(data)
+    content, tool_calls, _usage = anthropic_parse_response(data)
 
     assert content == "let me check"
     assert tool_calls[0]["id"] == "call_9"
@@ -124,7 +124,7 @@ def test_gemini_parse_response_extracts_text_and_function_call():
             }
         ]
     }
-    content, tool_calls = gemini_parse_response(data)
+    content, tool_calls, _usage = gemini_parse_response(data)
 
     assert content == "checking"
     assert tool_calls[0]["function"]["name"] == "web_search"
@@ -132,6 +132,6 @@ def test_gemini_parse_response_extracts_text_and_function_call():
 
 
 def test_gemini_parse_response_handles_no_candidates():
-    content, tool_calls = gemini_parse_response({"candidates": []})
+    content, tool_calls, _usage = gemini_parse_response({"candidates": []})
     assert content is None
     assert tool_calls is None

@@ -7,6 +7,17 @@ defaults:
   fallback_chain: default
   sandbox: non-privileged-only
 
+# Self-improving learning loop (ROADMAP.md Phase 6). After a task that crossed
+# the complexity threshold, a reviewer proposes a new skill or a patch to an
+# existing one. Proposals are STAGED, never written to disk automatically,
+# unless you flip write_approval to false — an agent that silently rewrites its
+# own instruction set is very hard to debug and audit.
+learning:
+  enabled: true
+  write_approval: true
+  min_tool_calls: 3
+  fallback_chain: local_first   # the reviewer itself is a cheap background job
+
 agents:
   orchestrator:
     fallback_chain: default

@@ -110,6 +110,10 @@ class SkillManager:
         spec.loader.exec_module(module)
         return module
 
+    def discovered(self) -> list[Skill]:
+        """Skills loaded by the last discover() call, without re-scanning disk."""
+        return list(self._skills.values())
+
     def as_openai_tools(self) -> list[dict]:
         return [s.as_openai_tool() for s in self._skills.values() if s.tool_name]
 
