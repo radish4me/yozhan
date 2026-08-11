@@ -26,3 +26,13 @@ jobs:
       - run: npm install --prefix gateway
       - run: npm run build --prefix gateway
       - run: npm test --prefix gateway
+
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --prefix dashboard
+      - run: npm run build --prefix dashboard

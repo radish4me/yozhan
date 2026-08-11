@@ -6,7 +6,11 @@
 // See ARCHITECTURE.md section 3.1 and ROADMAP.md Phase 5.
 
 import express, { type Request, type Response } from "express";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { DiscordAdapter } from "./channels/discord.js";
+import { SlackAdapter } from "./channels/slack.js";
 import { TelegramAdapter } from "./channels/telegram.js";
 import type { ChannelAdapter, IncomingMessage } from "./channels/types.js";
 import { PairingStore } from "./pairing/store.js";
@@ -35,6 +39,26 @@ app.post("/chat", async (req, res) => {
   const data = await response.json();
   res.status(response.status).json(data);
 });
+
+// Read-only runtime views the dashboard renders. These proxy straight through;
+// the runtime is the source of truth and is not exposed to the host network.
+for (const path of ["/agents", "/skills", "/providers", "/costs", "/proposals"]) {
+  app.get(path, async (req, res) => {
+    const query = new URLSearchParams(req.query as Record<string, string>).toString();
+    const response = await fetch(`${RUNTIME_URL}${path}${query ? `?${query}` : ""}`);
+    res.status(response.status).json(await response.json());
+  });
+}
+
+// Approving a proposal writes a new skill to disk, so it is admin-gated —
+// unlike the read-only views above.
+for (const action of ["approve", "reject"]) {
+  app.post(`/proposals/:id/${action}`, async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const response = await fetch(`${RUNTIME_URL}/proposals/${req.params.id}/${action}`, { method: "POST" });
+    res.status(response.status).json(await response.json());
+  });
+}
 
 function requireAdmin(req: Request, res: Response): boolean {
   if (!ADMIN_TOKEN) {
@@ -100,16 +124,47 @@ export async function handleIncoming(
 
 async function startChannels(): Promise<ChannelAdapter[]> {
   const adapters: ChannelAdapter[] = [];
+
+  const start = async (adapter: ChannelAdapter) => {
+    adapters.push(adapter);
+    await adapter.start((msg) => handleIncoming(pairingStore, RUNTIME_URL, adapter, msg));
+    console.log(`[gateway] ${adapter.name} channel started`);
+  };
+
   const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
   if (telegramToken) {
-    const telegram = new TelegramAdapter(telegramToken);
-    adapters.push(telegram);
-    await telegram.start((msg) => handleIncoming(pairingStore, RUNTIME_URL, telegram, msg));
-    console.log("[gateway] telegram channel started");
+    await start(new TelegramAdapter(telegramToken));
   } else {
     console.log("[gateway] TELEGRAM_BOT_TOKEN not set — telegram channel disabled");
   }
+
+  const discordToken = process.env.DISCORD_BOT_TOKEN;
+  if (discordToken) {
+    await start(new DiscordAdapter(discordToken));
+  }
+
+  const slackAppToken = process.env.SLACK_APP_TOKEN;
+  const slackBotToken = process.env.SLACK_BOT_TOKEN;
+  if (slackAppToken && slackBotToken) {
+    await start(new SlackAdapter(slackAppToken, slackBotToken));
+  } else if (slackAppToken || slackBotToken) {
+    // Half-configured is almost always a mistake worth naming out loud.
+    console.warn("[gateway] slack needs BOTH SLACK_APP_TOKEN and SLACK_BOT_TOKEN — channel disabled");
+  }
+
+  if (adapters.length === 0) {
+    console.log("[gateway] no channels configured — HTTP API only");
+  }
   return adapters;
+}
+
+// Serve the built dashboard, when one has been built into the image. Mounted
+// last so it never shadows an API route above.
+const dashboardDir = process.env.DASHBOARD_DIR ?? "../dashboard/dist";
+if (existsSync(dashboardDir)) {
+  app.use(express.static(dashboardDir));
+  app.get("*", (_req, res) => res.sendFile(resolve(dashboardDir, "index.html")));
+  console.log(`[gateway] serving dashboard from ${dashboardDir}`);
 }
 
 // Only start the HTTP server / channel adapters when this file is run

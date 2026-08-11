@@ -14,8 +14,12 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
+
+if TYPE_CHECKING:
+    from yozhan_runtime.sandbox.policy import SandboxPolicy
 
 _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
 
@@ -34,6 +38,8 @@ class Skill:
     tool_description: str | None = None
     tool_parameters: dict | None = None
     tool_run: Callable[..., str] | None = field(default=None, repr=False)
+    tool_path: Path | None = None
+    elevated: bool = False
 
     def as_openai_tool(self) -> dict | None:
         if not self.tool_name:
@@ -49,8 +55,9 @@ class Skill:
 
 
 class SkillManager:
-    def __init__(self, skill_dirs: list[Path]):
+    def __init__(self, skill_dirs: list[Path], sandbox_policy: "SandboxPolicy | None" = None):
         self.skill_dirs = skill_dirs
+        self.sandbox_policy = sandbox_policy
         self._skills: dict[str, Skill] = {}
         self._tool_index: dict[str, Skill] = {}
 
@@ -89,6 +96,7 @@ class SkillManager:
             depends_on=frontmatter.get("depends_on", []),
             instructions=body,
             path=skill_dir,
+            elevated=bool(frontmatter.get("elevated", False)),
         )
 
         if frontmatter.get("tool"):
@@ -99,6 +107,7 @@ class SkillManager:
                 skill.tool_description = getattr(module, "DESCRIPTION", skill.description)
                 skill.tool_parameters = getattr(module, "PARAMETERS", None)
                 skill.tool_run = getattr(module, "run", None)
+                skill.tool_path = tool_path
 
         return skill
 
@@ -121,7 +130,15 @@ class SkillManager:
         skill = self._tool_index.get(tool_name)
         if skill is None or skill.tool_run is None:
             return f"error: unknown tool '{tool_name}'"
+
+        policy = self.sandbox_policy
+        if policy is not None and skill.tool_path and policy.should_sandbox(skill.elevated):
+            result = policy.sandbox.run_tool(
+                str(skill.tool_path), arguments, timeout=policy.timeout_seconds
+            )
+            return result.as_tool_output()
+
         try:
             return str(skill.tool_run(**arguments))
-        except Exception as exc:  # tool implementations run in-process; never let one crash the agent loop
+        except Exception as exc:  # never let one bad tool crash the agent loop
             return f"error running tool '{tool_name}': {exc}"

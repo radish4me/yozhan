@@ -5,6 +5,8 @@
   orchestrate dispatch tasks across several agents (Phase 3)
   memory      inspect/edit curated cross-session memory (Phase 6)
   learn       review traces and approve staged skill proposals (Phase 6)
+  costs       per-agent cost/latency from the trace log (Phase 7)
+  scheduler   run scheduled/continuous agents (Phase 7)
   serve       the HTTP API the Gateway calls (Phase 5)
 """
 
@@ -20,13 +22,16 @@ from yozhan_runtime.learning.reviewer import apply_proposal, reviewer_from_confi
 from yozhan_runtime.memory.curated import CuratedMemory, MemoryCapExceeded
 from yozhan_runtime.memory.store import SessionStore
 from yozhan_runtime.providers.router import ProviderError, ProviderRouter
+from yozhan_runtime.sandbox.policy import sandbox_from_config
+from yozhan_runtime.scheduling.scheduler import Scheduler
 from yozhan_runtime.skills.manager import SkillManager
 
 
-def _build_runtime():
+def _build_runtime(agent_name: str | None = None):
     """The standard set of runtime objects every command needs."""
     router = ProviderRouter()
-    skills = SkillManager(skills_dirs())
+    policy = sandbox_from_config(load_agents(), agent_name)
+    skills = SkillManager(skills_dirs(), sandbox_policy=policy)
     skills.discover()
     memory = SessionStore()
     curated = CuratedMemory()
@@ -243,6 +248,59 @@ def learn_reject(proposal_id: int):
     store.set_proposal_status(proposal_id, "rejected")
     store.close()
     click.echo(f"rejected proposal #{proposal_id}")
+
+
+@main.command()
+@click.option(
+    "--by",
+    type=click.Choice(["agent", "name", "provider"]),
+    default="agent",
+    help="Group by agent, model name, or provider.",
+)
+def costs(by: str):
+    """Per-agent cost and latency from the trace log (Phase 6 data)."""
+    store = SessionStore()
+    rows = store.cost_summary(by)
+    if not rows:
+        click.echo("no traces recorded yet")
+        store.close()
+        return
+
+    click.echo(f"{by:<16} {'calls':>6} {'fails':>6} {'avg ms':>9} {'tokens':>9} {'USD':>10}")
+    for row in rows:
+        click.echo(
+            f"{row['key']:<16} {row['calls']:>6} {row['failures']:>6} "
+            f"{(row['avg_latency_ms'] or 0):>9.0f} {row['total_tokens']:>9} "
+            f"{row['total_cost_usd']:>10.4f}"
+        )
+    store.close()
+
+
+@main.command()
+def scheduler():
+    """Run scheduled and continuous agents (ticks once a minute)."""
+    router, skills, memory, curated = _build_runtime()
+    agents_config, providers_config = load_agents(), load_providers()
+    orchestrator = Orchestrator(
+        router=router,
+        skills=skills,
+        memory=memory,
+        agents_config=agents_config,
+        providers_config=providers_config,
+        curated=curated,
+        reviewer=reviewer_from_config(memory, router, agents_config, providers_config),
+    )
+    loop = Scheduler(orchestrator, agents_config)
+    if not loop.agents:
+        raise click.ClickException(
+            "no scheduled or continuous agents configured — add one with mode: scheduled in config/agents.yaml"
+        )
+    click.echo(f"scheduler running: {', '.join(a.name for a in loop.agents)} (Ctrl-C to stop)")
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt:
+        click.echo("\nstopped")
+    memory.close()
 
 
 @main.command()

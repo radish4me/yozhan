@@ -61,9 +61,14 @@ python3 -m venv "$YOZHAN_HOME/venv"
 "$YOZHAN_HOME/venv/bin/pip" install --quiet --upgrade pip
 "$YOZHAN_HOME/venv/bin/pip" install --quiet -e "$REPO_DIR/runtime"
 
-# --- 3. gateway node deps ---
+# --- 3. gateway + dashboard ---
 log "installing gateway node dependencies"
 npm ci --prefix "$REPO_DIR/gateway"
+npm run build --prefix "$REPO_DIR/gateway"
+
+log "building dashboard"
+npm ci --prefix "$REPO_DIR/dashboard"
+npm run build --prefix "$REPO_DIR/dashboard"
 
 # --- 4. config (never overwrite an existing install) ---
 mkdir -p "$YOZHAN_HOME/config"
@@ -86,6 +91,7 @@ Description=yozhan agent runtime
 [Service]
 Environment=YOZHAN_CONFIG_DIR=$YOZHAN_HOME/config
 Environment=YOZHAN_SKILLS_DIR=$REPO_DIR/skills
+Environment=YOZHAN_USER_SKILLS_DIR=$YOZHAN_HOME/skills
 Environment=YOZHAN_DATA_DIR=$YOZHAN_HOME/data
 Environment=YOZHAN_WORKSPACE_DIR=$YOZHAN_HOME/workspace
 Environment=LLAMA_SERVER_URL=http://127.0.0.1:8080/v1
@@ -102,8 +108,26 @@ After=yozhan-runtime.service
 [Service]
 WorkingDirectory=$REPO_DIR/gateway
 Environment=RUNTIME_URL=http://127.0.0.1:8787
+Environment=DASHBOARD_DIR=$REPO_DIR/dashboard/dist
 EnvironmentFile=$YOZHAN_HOME/.env
 ExecStart=/usr/bin/env node dist/index.js
+Restart=on-failure
+[Install]
+WantedBy=default.target
+EOF
+  cat > "$HOME/.config/systemd/user/yozhan-scheduler.service" <<EOF
+[Unit]
+Description=yozhan scheduled/continuous agents
+After=yozhan-runtime.service
+[Service]
+Environment=YOZHAN_CONFIG_DIR=$YOZHAN_HOME/config
+Environment=YOZHAN_SKILLS_DIR=$REPO_DIR/skills
+Environment=YOZHAN_USER_SKILLS_DIR=$YOZHAN_HOME/skills
+Environment=YOZHAN_DATA_DIR=$YOZHAN_HOME/data
+Environment=YOZHAN_WORKSPACE_DIR=$YOZHAN_HOME/workspace
+Environment=LLAMA_SERVER_URL=http://127.0.0.1:8080/v1
+EnvironmentFile=$YOZHAN_HOME/.env
+ExecStart=$YOZHAN_HOME/venv/bin/yozhan scheduler
 Restart=on-failure
 [Install]
 WantedBy=default.target
@@ -111,6 +135,11 @@ EOF
   systemctl --user daemon-reload
   systemctl --user enable --now yozhan-runtime.service yozhan-gateway.service
   log "enabled systemd --user services: yozhan-runtime, yozhan-gateway"
+  # The scheduler unit is written but left disabled: it exits immediately when
+  # no scheduled/continuous agent is configured, which with Restart=on-failure
+  # would just spin. Enable it once you've added one to config/agents.yaml.
+  log "scheduler unit written (disabled) — enable with:"
+  log "  systemctl --user enable --now yozhan-scheduler.service"
 else
   log "systemd --user unavailable; start manually:"
   log "  YOZHAN_CONFIG_DIR=$YOZHAN_HOME/config YOZHAN_SKILLS_DIR=$REPO_DIR/skills \\"

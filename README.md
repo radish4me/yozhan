@@ -40,15 +40,21 @@ For a bare VPS without Docker, see [DEPLOYMENT.md](DEPLOYMENT.md#2-bare-metal-li
 
 ## Status
 
-Early scaffold — see [ROADMAP.md](ROADMAP.md) for what's implemented
-(Phase 1: inference spine + CLI chat) versus planned.
+v1 feature-complete against [ROADMAP.md](ROADMAP.md) Phases 1-7: local
+inference + CLI chat, a single-agent core with a unified skill format,
+multi-agent orchestration with per-agent model assignment, a
+multi-provider/multi-key router with fallback chains and parallel fan-out,
+a channel gateway (Telegram, Discord, Slack) with pairing, a self-improving
+learning loop with approval-gated skill authoring, scheduled/continuous
+agents, sandboxed tool execution, a React dashboard, and cost/latency
+reporting.
 
 ## Project layout
 
 ```
 runtime/     Python agent runtime — agent loop, skills, memory, model provider router
 gateway/     Node/TypeScript channel gateway — pairing, channel adapters, sandboxing
-dashboard/   React/TypeScript dashboard (Phase 7, not yet implemented)
+dashboard/   React/TypeScript dashboard — chat, agents, providers, costs, pairing
 config/      providers.yaml, agents.yaml — the two files you actually edit
 skills/      built-in skills (SKILL.md, agentskills.io-compatible format)
 docker/      Dockerfiles for llama-server, runtime, gateway

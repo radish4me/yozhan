@@ -5,7 +5,15 @@
 
 defaults:
   fallback_chain: default
+  # Sandboxed tool execution (ROADMAP.md Phase 7).
+  #   off                  every tool runs in the runtime process
+  #   non-privileged-only  sandbox everything except skills marked `elevated: true`
+  #   all                  sandbox everything, elevated skills included
+  # A sandboxed tool never receives the runtime's environment, so provider API
+  # keys are not reachable from skill code.
   sandbox: non-privileged-only
+  sandbox_backend: subprocess   # subprocess | docker | podman
+  sandbox_timeout_seconds: 30
 
 # Self-improving learning loop (ROADMAP.md Phase 6). After a task that crossed
 # the complexity threshold, a reviewer proposes a new skill or a patch to an
@@ -38,3 +46,18 @@ agents:
     subagent_of: orchestrator
     fallback_chain: cheap_parallel_fanout
     mode: on-demand
+
+  # Agents that aren't driven by a user message. `yozhan scheduler` runs these;
+  # both need a `task:` since there's no human turn to supply one.
+  digest:
+    fallback_chain: local_first
+    mode: scheduled
+    schedule: "0 8 * * *"          # minute hour day-of-month month day-of-week
+    task: "Summarize anything noteworthy from yesterday's sessions."
+
+  # A continuous agent re-runs on a fixed interval instead of a cron schedule.
+  # watcher:
+  #   fallback_chain: local_first
+  #   mode: continuous
+  #   interval_seconds: 900
+  #   task: "Check the workspace for new files and report anything unexpected."

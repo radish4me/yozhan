@@ -128,6 +128,89 @@ to `yozhan chat`. Additional channels (Discord, Slack, ...) plug into the
 same `ChannelAdapter` interface (`gateway/src/channels/types.ts`) and reuse
 this same pairing flow — see ROADMAP.md Phase 7.
 
+### Discord and Slack
+
+Set the relevant tokens in `.env` and restart the gateway; each channel is
+enabled only when its token(s) are present.
+
+- **Discord** — `DISCORD_BOT_TOKEN`. The bot needs the *Message Content*
+  privileged intent enabled in the Discord developer portal, or messages
+  arrive with empty text.
+- **Slack** — needs **both** `SLACK_APP_TOKEN` (an app-level `xapp-…` token
+  with `connections:write`) and `SLACK_BOT_TOKEN` (`xoxb-…`). yozhan uses
+  Socket Mode, so no public URL or inbound firewall rule is required.
+
+Every channel goes through the same pairing flow described above.
+
+### The dashboard
+
+`docker compose up` builds the dashboard and serves it from the gateway, so
+it is available at `http://<host>:3000` with no extra service. It shows chat,
+resolved per-agent model assignments, skills, provider key health, the
+cost/latency report, staged skill proposals, and pairing requests.
+
+Approving a pairing request or a skill proposal from the dashboard needs the
+`GATEWAY_ADMIN_TOKEN`, entered under **Settings**. It is held for that browser
+session only. Read-only views need no token.
+
+For dashboard development against a running gateway:
+
+```bash
+GATEWAY_URL=http://localhost:3000 npm run dev --prefix dashboard
+```
+
+### Scheduled and continuous agents
+
+The `scheduler` service in `docker-compose.yml` runs agents that aren't driven
+by a user message — `mode: scheduled` (a cron expression) and
+`mode: continuous` (a fixed interval) in `config/agents.yaml`. Both need a
+`task:`, since there is no human turn to supply one. Outside Docker, run it
+directly:
+
+```bash
+yozhan scheduler
+```
+
+### Sandboxed tool execution
+
+`defaults.sandbox` in `config/agents.yaml` controls where skill code runs, and
+any agent can override it:
+
+| Mode | Behaviour |
+|---|---|
+| `off` | every tool runs inside the runtime process |
+| `non-privileged-only` (default) | everything is sandboxed except skills whose manifest sets `elevated: true` |
+| `all` | everything is sandboxed, elevated skills included |
+
+A sandboxed tool is started with a scrubbed environment — it receives only a
+small allowlist (`PATH`, `HOME`, the workspace dir, …) and **never** the
+runtime's provider API keys, `HF_TOKEN`, or `GATEWAY_ADMIN_TOKEN`. It also
+gets a working directory confined to the workspace and a wall-clock timeout.
+
+Two backends, via `defaults.sandbox_backend`:
+
+- `subprocess` (default) — process isolation. Stops credential leakage and
+  runaway tools. It is not kernel isolation, and does not contain an attacker
+  who already has local code execution.
+- `docker` / `podman` — runs the tool in a throwaway container with
+  `--network none` and a read-only mount, so a tool can reach neither the
+  runtime's filesystem nor the network. Prefer this if you install skills you
+  did not write.
+
+### Cost and latency reporting
+
+Every model and tool call is traced. To see the rollup:
+
+```bash
+yozhan costs --by agent
+```
+
+`--by model` and `--by provider` group differently; the dashboard's **Costs**
+tab shows the same data. A model with no `pricing:` block in
+`config/providers.yaml` contributes `$0` because its cost is *unknown* — it is
+not free. Add a `pricing:` block for any remote model whose spend you want
+tracked.
+
 ### GPU hosts
 
 ```bash

@@ -21,12 +21,39 @@ services:
       - LLAMA_SERVER_URL=http://llama-server:8080/v1
       - YOZHAN_DATA_DIR=/app/data
       - YOZHAN_SKILLS_DIR=/app/skills
+      - YOZHAN_USER_SKILLS_DIR=/app/user-skills
       - YOZHAN_WORKSPACE_DIR=/app/workspace
     volumes:
       - ./config:/app/config
       - runtime_data:/app/data
       - runtime_workspace:/app/workspace
+      # Approved learning-loop skills are written here, kept separate from the
+      # repo's built-in skills/ so an approved proposal can't clobber one.
+      - runtime_user_skills:/app/user-skills
     depends_on: [llama-server]
+    networks: [yozhan_internal]
+
+  # Scheduled and continuous agents. Shares the runtime image and volumes;
+  # runs the scheduler loop instead of the HTTP API.
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/runtime.Dockerfile
+    command: ["scheduler"]
+    env_file: .env
+    environment:
+      - LLAMA_SERVER_URL=http://llama-server:8080/v1
+      - YOZHAN_DATA_DIR=/app/data
+      - YOZHAN_SKILLS_DIR=/app/skills
+      - YOZHAN_USER_SKILLS_DIR=/app/user-skills
+      - YOZHAN_WORKSPACE_DIR=/app/workspace
+    volumes:
+      - ./config:/app/config
+      - runtime_data:/app/data
+      - runtime_workspace:/app/workspace
+      - runtime_user_skills:/app/user-skills
+    depends_on: [runtime]
+    restart: unless-stopped
     networks: [yozhan_internal]
 
   gateway:
@@ -49,6 +76,7 @@ volumes:
   llama_cache:
   runtime_data:
   runtime_workspace:
+  runtime_user_skills:
   gateway_data:
 
 networks:

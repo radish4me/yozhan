@@ -6,6 +6,9 @@ capabilities: [memory]
 tags: [core, memory]
 depends_on: []
 tool: true
+# Writes to the user's curated memory, which lives outside the sandbox
+# workspace — so this skill runs in-process unless sandbox mode is `all`.
+elevated: true
 ---
 
 # memory-note
