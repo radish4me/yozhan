@@ -15,6 +15,11 @@
 # runtime (Python) and gateway (Node) are built, which is quick.
 #
 # Set GATEWAY_ADMIN_TOKEN in Portainer's Environment variables before deploying.
+#
+# DO NOT paste secrets into this file — it is stored and displayed in plain
+# text. If you do override a default inline, the syntax is ${VAR:-value}, with
+# a dash. ${VAR:value} is not valid Compose and fails with "invalid
+# interpolation format".
 
 services:
   llama-server:

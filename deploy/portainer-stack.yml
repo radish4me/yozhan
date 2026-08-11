@@ -8,6 +8,14 @@
 # machine out of memory. Here llama.cpp comes from the upstream image, and the
 # runtime/gateway come from GHCR.
 #
+# DO NOT paste secrets into this file. Set them in Portainer's
+# "Environment variables" section, below the editor box. This file is stored
+# and displayed in plain text to anyone with access to the stack.
+#
+# If you do override a default inline, the syntax is ${VAR:-value} — with a
+# dash. ${VAR:value} is not valid Compose and fails with
+# "invalid interpolation format".
+#
 # REQUIRED environment variables (Portainer > Environment variables):
 #   GATEWAY_ADMIN_TOKEN   any long random string; protects pairing + skill approval
 #
@@ -90,8 +98,11 @@ services:
       PORT: 3000
       GATEWAY_DATA_DIR: /app/gateway/data
       # Required: protects pairing approval and skill-proposal writes.
+      # Set this in Portainer > Environment variables — do not paste the token
+      # here. (If you must inline it, the syntax is ${VAR:-value}, with a dash.)
       GATEWAY_ADMIN_TOKEN: ${GATEWAY_ADMIN_TOKEN:?set a long random string}
       # Channels — each turns on only when its token(s) are present.
+      # Set these in Portainer > Environment variables too; they are secrets.
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
       SLACK_APP_TOKEN: ${SLACK_APP_TOKEN:-}

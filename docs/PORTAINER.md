@@ -197,6 +197,24 @@ users. It's a one-line change in `agents.yaml`, not a redeploy.
 
 ## Troubleshooting
 
+**`invalid interpolation format ... You may need to escape any $ with another $`**
+
+You edited a `${VAR:?...}` or `${VAR:-}` line to hard-code a value and wrote
+`${VAR:value}`. Compose has no such form — it needs a dash:
+
+| Syntax | Meaning |
+|---|---|
+| `${VAR:value}` | invalid — this error |
+| `${VAR:-value}` | use `value` when `VAR` is unset or empty |
+| `${VAR:?message}` | fail with `message` when `VAR` is unset |
+
+Don't hard-code it at all: put the value in **Environment variables** below
+the editor and leave the `${...}` reference alone. Stack definitions are
+stored and shown in plain text, so a token pasted into the file is readable
+by anyone with access to the stack. If you already pasted a real token
+anywhere it shouldn't be, rotate it — Telegram tokens via @BotFather →
+*Revoke current token*.
+
 **`gateway` restarts / stack won't deploy**
 `GATEWAY_ADMIN_TOKEN` isn't set. It's deliberately required — the stack
 refuses to come up rather than exposing unauthenticated admin endpoints.
