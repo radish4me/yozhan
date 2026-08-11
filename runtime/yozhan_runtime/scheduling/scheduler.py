@@ -107,7 +107,16 @@ class Scheduler:
         return dispatched
 
     def run_forever(self) -> None:
-        logger.info("scheduler started with %d agent(s)", len(self.agents))
+        if not self.agents:
+            # Idle rather than exit. Under a process supervisor (systemd,
+            # Docker `restart: unless-stopped`) exiting here would produce a
+            # restart loop over what is really just an empty config.
+            logger.warning(
+                "no scheduled or continuous agents configured — idling. "
+                "Add one with mode: scheduled to config/agents.yaml and restart."
+            )
+        else:
+            logger.info("scheduler started with %d agent(s)", len(self.agents))
         while True:
             self.tick()
             time.sleep(TICK_SECONDS)

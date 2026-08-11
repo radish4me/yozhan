@@ -1,0 +1,102 @@
+# yozhan — Portainer stack (Repository method, builds from source)
+#
+# Use this when you'd rather build on your own VPS than pull published images
+# — or before the GHCR images exist. Deploy it with
+# Portainer > Stacks > Add stack > Repository:
+#
+#   Repository URL       https://github.com/radish4me/yozhan
+#   Compose path         deploy/portainer-stack-build.yml
+#
+# Portainer clones the repo, so `build:` has a context here (it does not in the
+# Web editor — use deploy/portainer-stack.yml for that).
+#
+# llama.cpp still comes from the upstream prebuilt image rather than being
+# compiled: building it on a small VPS is slow and can exhaust memory. Only the
+# runtime (Python) and gateway (Node) are built, which is quick.
+#
+# Set GATEWAY_ADMIN_TOKEN in Portainer's Environment variables before deploying.
+
+services:
+  llama-server:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    restart: unless-stopped
+    command: >
+      -hf ${LLAMA_HF_MODEL:-Qwen/Qwen3.5-0.8B-GGUF:Q4_K_M}
+      --host 0.0.0.0
+      --port 8080
+      -c ${LLAMA_CONTEXT_SIZE:-4096}
+      -t ${LLAMA_THREADS:-2}
+    environment:
+      LLAMA_CACHE: /models
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - llama_cache:/models
+    networks: [yozhan]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 300s
+
+  runtime:
+    build:
+      context: ..
+      dockerfile: docker/runtime.Dockerfile
+    restart: unless-stopped
+    depends_on: [llama-server]
+    environment:
+      LLAMA_SERVER_URL: http://llama-server:8080/v1
+      YOZHAN_CONFIG_DIR: /app/config
+      YOZHAN_DATA_DIR: /app/data
+      YOZHAN_SKILLS_DIR: /app/skills
+      YOZHAN_USER_SKILLS_DIR: /app/user-skills
+      YOZHAN_WORKSPACE_DIR: /app/workspace
+      HF_TOKEN: ${HF_TOKEN:-}
+      ANTHROPIC_API_KEY_1: ${ANTHROPIC_API_KEY_1:-}
+      ANTHROPIC_API_KEY_2: ${ANTHROPIC_API_KEY_2:-}
+      GEMINI_API_KEY_1: ${GEMINI_API_KEY_1:-}
+      GEMINI_API_KEY_2: ${GEMINI_API_KEY_2:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      GROK_API_KEY: ${GROK_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      A2A_INBOUND_TOKEN: ${A2A_INBOUND_TOKEN:-}
+    volumes:
+      - yozhan_config:/app/config
+      - yozhan_data:/app/data
+      - yozhan_workspace:/app/workspace
+      - yozhan_user_skills:/app/user-skills
+    networks: [yozhan]
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: docker/gateway.Dockerfile
+    restart: unless-stopped
+    depends_on: [runtime]
+    environment:
+      RUNTIME_URL: http://runtime:8787
+      PORT: 3000
+      GATEWAY_DATA_DIR: /app/gateway/data
+      GATEWAY_ADMIN_TOKEN: ${GATEWAY_ADMIN_TOKEN:?set a long random string}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN:-}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+    ports:
+      - "${GATEWAY_PORT:-3000}:3000"
+    volumes:
+      - gateway_data:/app/gateway/data
+    networks: [yozhan]
+
+volumes:
+  llama_cache:
+  yozhan_config:
+  yozhan_data:
+  yozhan_workspace:
+  yozhan_user_skills:
+  gateway_data:
+
+networks:
+  yozhan:
+    driver: bridge

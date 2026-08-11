@@ -8,10 +8,16 @@ routing. Deployable via `docker compose up` or a bare Linux VPS install
 script. **Linux/Docker only** — no Windows installers, PowerShell, or
 Windows-specific code paths anywhere in this project.
 
-Read [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design (including
-the concrete per-agent model-assignment and provider/fallback config
-schemas), [ROADMAP.md](ROADMAP.md) for the phased build plan, and
-[DEPLOYMENT.md](DEPLOYMENT.md) for setup instructions.
+**New here? Start with the [User Guide](docs/USER_GUIDE.md).**
+Deploying to a VPS? [Portainer setup](docs/PORTAINER.md).
+
+| Doc | What's in it |
+|---|---|
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Install, configure, and use yozhan |
+| [docs/PORTAINER.md](docs/PORTAINER.md) | Step-by-step VPS deployment with Portainer |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Docker Compose + bare-metal install reference |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System design and the config schemas |
+| [ROADMAP.md](ROADMAP.md) | Phased build plan and license notes |
 
 ## Quickstart
 
@@ -58,6 +64,8 @@ dashboard/   React/TypeScript dashboard — chat, agents, providers, costs, pair
 config/      providers.yaml, agents.yaml — the two files you actually edit
 skills/      built-in skills (SKILL.md, agentskills.io-compatible format)
 docker/      Dockerfiles for llama-server, runtime, gateway
+deploy/      Portainer stack files for VPS deployment
+docs/        user guide and Portainer walkthrough
 scripts/     bare-metal Linux install script
 ```
 

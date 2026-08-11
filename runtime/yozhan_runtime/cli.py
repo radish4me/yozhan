@@ -149,7 +149,8 @@ def memory():
 def memory_show(kind: str):
     """Print the current contents of a curated memory file."""
     contents = CuratedMemory().read(kind)
-    click.echo(contents.rstrip() if contents.strip() else f"({kind} memory is empty)")
+    filename = "MEMORY.md" if kind == "memory" else "USER.md"
+    click.echo(contents.rstrip() if contents.strip() else f"({filename} is empty)")
 
 
 @memory.command(name="add")
@@ -253,14 +254,15 @@ def learn_reject(proposal_id: int):
 @main.command()
 @click.option(
     "--by",
-    type=click.Choice(["agent", "name", "provider"]),
+    type=click.Choice(["agent", "model", "provider"]),
     default="agent",
-    help="Group by agent, model name, or provider.",
+    help="Group by agent, model, or provider.",
 )
 def costs(by: str):
     """Per-agent cost and latency from the trace log (Phase 6 data)."""
     store = SessionStore()
-    rows = store.cost_summary(by)
+    # Traces store the model under `name`; "model" is the word people expect.
+    rows = store.cost_summary("name" if by == "model" else by)
     if not rows:
         click.echo("no traces recorded yet")
         store.close()
@@ -291,11 +293,16 @@ def scheduler():
         reviewer=reviewer_from_config(memory, router, agents_config, providers_config),
     )
     loop = Scheduler(orchestrator, agents_config)
-    if not loop.agents:
-        raise click.ClickException(
-            "no scheduled or continuous agents configured — add one with mode: scheduled in config/agents.yaml"
+    if loop.agents:
+        click.echo(f"scheduler running: {', '.join(a.name for a in loop.agents)} (Ctrl-C to stop)")
+    else:
+        # Idling beats exiting: under a supervisor, exiting here is a restart
+        # loop over an empty config rather than a useful error.
+        click.echo(
+            "no scheduled or continuous agents configured — idling. "
+            "Add one with mode: scheduled to config/agents.yaml and restart.",
+            err=True,
         )
-    click.echo(f"scheduler running: {', '.join(a.name for a in loop.agents)} (Ctrl-C to stop)")
     try:
         loop.run_forever()
     except KeyboardInterrupt:

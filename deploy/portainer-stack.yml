@@ -1,0 +1,145 @@
+# yozhan — Portainer stack (Web editor method)
+#
+# Paste this whole file into Portainer > Stacks > Add stack > Web editor, set
+# the environment variables listed below, and Deploy.
+#
+# It pulls prebuilt images and builds nothing on your VPS. That matters:
+# compiling llama.cpp on a 2-4 vCPU box takes a long time and can run the
+# machine out of memory. Here llama.cpp comes from the upstream image, and the
+# runtime/gateway come from GHCR.
+#
+# REQUIRED environment variables (Portainer > Environment variables):
+#   GATEWAY_ADMIN_TOKEN   any long random string; protects pairing + skill approval
+#
+# COMMON optional ones:
+#   LLAMA_HF_MODEL        GGUF model to serve (default below is the smallest)
+#   TELEGRAM_BOT_TOKEN    enables the Telegram channel
+#   ANTHROPIC_API_KEY_1   / GEMINI_API_KEY_1 / OPENROUTER_API_KEY / ... remote providers
+#   GATEWAY_PORT          host port for the dashboard + API (default 3000)
+#
+# See docs/PORTAINER.md for the full walkthrough.
+
+services:
+  # ---- Local inference (llama.cpp, OpenAI-compatible API) ------------------
+  llama-server:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    restart: unless-stopped
+    # Pick ONE of the three shipped models by setting LLAMA_HF_MODEL:
+    #   Qwen/Qwen3.5-0.8B-GGUF:Q4_K_M        (default — smallest, fits 4 GB)
+    #   LiquidAI/LFM2.5-GGUF:Q4_K_M          (edge-sized)
+    #   SomeOrg/Agents-A1-4B-Q4_K_M-GGUF     (4B — wants ~8 GB, slower on CPU)
+    # Any other GGUF repo on Hugging Face works here too.
+    command: >
+      -hf ${LLAMA_HF_MODEL:-Qwen/Qwen3.5-0.8B-GGUF:Q4_K_M}
+      --host 0.0.0.0
+      --port 8080
+      -c ${LLAMA_CONTEXT_SIZE:-4096}
+      -t ${LLAMA_THREADS:-2}
+    environment:
+      LLAMA_CACHE: /models
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - llama_cache:/models
+    networks: [yozhan]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 300s   # first start downloads the model
+
+  # ---- Agent runtime (Python): agents, skills, memory, provider router ----
+  runtime:
+    image: ghcr.io/radish4me/yozhan-runtime:latest
+    restart: unless-stopped
+    depends_on: [llama-server]
+    environment:
+      LLAMA_SERVER_URL: http://llama-server:8080/v1
+      YOZHAN_CONFIG_DIR: /app/config
+      YOZHAN_DATA_DIR: /app/data
+      YOZHAN_SKILLS_DIR: /app/skills
+      YOZHAN_USER_SKILLS_DIR: /app/user-skills
+      YOZHAN_WORKSPACE_DIR: /app/workspace
+      HF_TOKEN: ${HF_TOKEN:-}
+      # Remote providers — leave blank to run purely on the local model.
+      # Two keys for a provider means automatic rotation when one is limited.
+      ANTHROPIC_API_KEY_1: ${ANTHROPIC_API_KEY_1:-}
+      ANTHROPIC_API_KEY_2: ${ANTHROPIC_API_KEY_2:-}
+      GEMINI_API_KEY_1: ${GEMINI_API_KEY_1:-}
+      GEMINI_API_KEY_2: ${GEMINI_API_KEY_2:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      GROK_API_KEY: ${GROK_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      A2A_INBOUND_TOKEN: ${A2A_INBOUND_TOKEN:-}
+    volumes:
+      # Named volumes are seeded from the image on first start, so config/
+      # arrives pre-populated and survives stack updates.
+      - yozhan_config:/app/config
+      - yozhan_data:/app/data
+      - yozhan_workspace:/app/workspace
+      - yozhan_user_skills:/app/user-skills
+    networks: [yozhan]
+
+  # ---- Gateway (Node) + dashboard: channels, pairing, HTTP API ------------
+  gateway:
+    image: ghcr.io/radish4me/yozhan-gateway:latest
+    restart: unless-stopped
+    depends_on: [runtime]
+    environment:
+      RUNTIME_URL: http://runtime:8787
+      PORT: 3000
+      GATEWAY_DATA_DIR: /app/gateway/data
+      # Required: protects pairing approval and skill-proposal writes.
+      GATEWAY_ADMIN_TOKEN: ${GATEWAY_ADMIN_TOKEN:?set a long random string}
+      # Channels — each turns on only when its token(s) are present.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN:-}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+    ports:
+      - "${GATEWAY_PORT:-3000}:3000"
+    volumes:
+      - gateway_data:/app/gateway/data
+    networks: [yozhan]
+
+  # ---- Scheduled / continuous agents --------------------------------------
+  # Same image as the runtime, running the scheduler loop instead of the API.
+  # Opt-in: it only starts when you set COMPOSE_PROFILES=scheduler in the
+  # stack's environment variables. Do that once you've added a
+  # `mode: scheduled` agent to agents.yaml.
+  scheduler:
+    image: ghcr.io/radish4me/yozhan-runtime:latest
+    command: ["scheduler"]
+    restart: unless-stopped
+    depends_on: [runtime]
+    profiles: [scheduler]
+    environment:
+      LLAMA_SERVER_URL: http://llama-server:8080/v1
+      YOZHAN_CONFIG_DIR: /app/config
+      YOZHAN_DATA_DIR: /app/data
+      YOZHAN_SKILLS_DIR: /app/skills
+      YOZHAN_USER_SKILLS_DIR: /app/user-skills
+      YOZHAN_WORKSPACE_DIR: /app/workspace
+      ANTHROPIC_API_KEY_1: ${ANTHROPIC_API_KEY_1:-}
+      GEMINI_API_KEY_1: ${GEMINI_API_KEY_1:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    volumes:
+      - yozhan_config:/app/config
+      - yozhan_data:/app/data
+      - yozhan_workspace:/app/workspace
+      - yozhan_user_skills:/app/user-skills
+    networks: [yozhan]
+
+volumes:
+  llama_cache:        # downloaded GGUF models — the big one
+  yozhan_config:      # providers.yaml + agents.yaml (edit these to tune)
+  yozhan_data:        # conversation history, traces, curated memory
+  yozhan_workspace:   # files tools are allowed to read/write
+  yozhan_user_skills: # skills approved from the learning loop
+  gateway_data:       # pairing state
+
+networks:
+  yozhan:
+    # Only the gateway publishes a port. The runtime and llama-server stay on
+    # this internal network and are not reachable from outside the host.
+    driver: bridge
