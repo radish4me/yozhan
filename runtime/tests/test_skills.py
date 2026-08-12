@@ -9,21 +9,36 @@ def test_discovers_all_built_in_skills():
     manager = SkillManager([REPO_SKILLS_DIR])
     skills = manager.discover()
     names = {s.name for s in skills}
-    assert names == {"example-echo", "read-file", "web-search", "memory-note", "a2a-peer"}
+    assert names == {
+        "example-echo",
+        "read-file",
+        "web-search",
+        "web-browse",
+        "memory-note",
+        "session-search",
+        "a2a-peer",
+    }
 
 
 def test_instruction_only_skill_has_no_tool():
     manager = SkillManager([REPO_SKILLS_DIR])
     skills = {s.name: s for s in manager.discover()}
     assert skills["example-echo"].tool_name is None
-    assert len(manager.as_openai_tools()) == 4  # read_file, web_search, memory_note, a2a_peer — echo excluded
+    assert len(manager.as_openai_tools()) == 6  # every skill but instruction-only example-echo
 
 
 def test_tool_skills_are_exposed_as_openai_tools():
     manager = SkillManager([REPO_SKILLS_DIR])
     manager.discover()
     tool_names = {t["function"]["name"] for t in manager.as_openai_tools()}
-    assert tool_names == {"read_file", "web_search", "memory_note", "a2a_peer"}
+    assert tool_names == {
+        "read_file",
+        "web_search",
+        "web_browse",
+        "memory_note",
+        "session_search",
+        "a2a_peer",
+    }
 
 
 def test_execute_web_search_stub():

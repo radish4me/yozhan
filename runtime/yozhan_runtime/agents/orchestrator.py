@@ -50,6 +50,7 @@ class Orchestrator:
         providers_config: dict | None = None,
         curated: CuratedMemory | None = None,
         reviewer: "LearningReviewer | None" = None,
+        mcp=None,
     ):
         self.router = router
         self.skills = skills
@@ -58,6 +59,7 @@ class Orchestrator:
         self._providers_config = providers_config if providers_config is not None else load_providers()
         self.curated = curated
         self.reviewer = reviewer
+        self.mcp = mcp
 
     @property
     def learning_config(self) -> dict:
@@ -81,6 +83,9 @@ class Orchestrator:
             chain=resolved.chain,
             agent_name=agent_name,
             curated=self.curated,
+            mcp=self.mcp,
+            agents_config=self._agents_config,
+            providers_config=self._providers_config,
         )
         try:
             result = agent.run(task)

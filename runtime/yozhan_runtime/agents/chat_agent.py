@@ -19,6 +19,7 @@ import time
 from uuid import uuid4
 
 from yozhan_runtime.agents.base import AgentResult, BaseAgent
+from yozhan_runtime.commands import SETTING_MODEL, CommandContext, dispatch, is_command
 from yozhan_runtime.memory.curated import CuratedMemory
 from yozhan_runtime.memory.store import MemoryBackend
 from yozhan_runtime.providers.router import ChatResult, ProviderRouter
@@ -41,6 +42,9 @@ class ChatAgent(BaseAgent):
         max_tool_iterations: int = 5,
         agent_name: str | None = None,
         curated: CuratedMemory | None = None,
+        mcp=None,
+        agents_config: dict | None = None,
+        providers_config: dict | None = None,
     ):
         self.router = router
         self.skills = skills
@@ -52,12 +56,50 @@ class ChatAgent(BaseAgent):
         self.max_tool_iterations = max_tool_iterations
         self.agent_name = agent_name or self.name
         self.curated = curated
+        self.mcp = mcp
+        self.agents_config = agents_config or {}
+        self.providers_config = providers_config or {}
         self.last_task_id: str | None = None
+
+    def _effective_model(self) -> str | None:
+        """An explicit constructor argument wins; otherwise a /model override
+        set for this session; otherwise the configured default."""
+        if self.model:
+            return self.model
+        getter = getattr(self.memory, "get_setting", None)
+        return getter(self.session_id, SETTING_MODEL) if getter else None
+
+    def _all_tools(self) -> list[dict]:
+        tools = self.skills.as_openai_tools()
+        if self.mcp is not None:
+            tools += self.mcp.as_openai_tools()
+        return tools
+
+    def _execute_tool(self, name: str, arguments: dict) -> str:
+        if self.mcp is not None and self.mcp.handles(name):
+            return self.mcp.call(name, arguments)
+        return self.skills.execute(name, arguments)
 
     def _call_model(self, messages: list[dict], tools: list[dict]) -> ChatResult:
         if self.chain:
             return self.router.chat_with_fallback(self.chain, messages, tools=tools or None)
-        return self.router.chat(self.provider, self.model, messages, tools=tools or None)
+        return self.router.chat(self.provider, self._effective_model(), messages, tools=tools or None)
+
+    def _handle_command(self, task: str) -> AgentResult:
+        context = CommandContext(
+            session_id=self.session_id,
+            memory=self.memory,
+            skills=self.skills,
+            curated=self.curated,
+            router=self.router,
+            agents_config=self.agents_config,
+            providers_config=self.providers_config,
+            mcp=self.mcp,
+        )
+        output = dispatch(task, context)
+        # Commands are operator actions, not conversation. Keeping them out of
+        # history stops them becoming context the model tries to imitate.
+        return AgentResult(output=output, metadata={"command": True})
 
     def _build_messages(self) -> list[dict]:
         messages: list[dict] = []
@@ -79,12 +121,15 @@ class ChatAgent(BaseAgent):
         )
 
     def run(self, task: str, context: dict | None = None) -> AgentResult:
+        if is_command(task):
+            return self._handle_command(task)
+
         task_id = uuid4().hex
         self.last_task_id = task_id
 
         self.memory.append_message(self.session_id, "user", task)
         messages = self._build_messages()
-        tools = self.skills.as_openai_tools()
+        tools = self._all_tools()
 
         for _ in range(self.max_tool_iterations):
             started = time.monotonic()
@@ -127,7 +172,7 @@ class ChatAgent(BaseAgent):
                         arguments = {}
 
                     tool_started = time.monotonic()
-                    output = self.skills.execute(function["name"], arguments)
+                    output = self._execute_tool(function["name"], arguments)
                     # SkillManager.execute never raises — it returns an "error: ..."
                     # string so one bad tool can't kill the loop. Detect that here
                     # so the trace log reflects real failures.

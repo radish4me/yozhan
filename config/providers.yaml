@@ -54,8 +54,20 @@ providers:
       - env: OPENAI_API_KEY
     models: [gpt-5.1, gpt-5.1-mini]
 
-  # Any other OpenAI-compatible endpoint (self-hosted, another VPS, a
-  # fine-tune host, ...) — uncomment and point base_url at it:
+  # Any other OpenAI-compatible endpoint. Ollama, vLLM and SGLang all expose
+  # one, so they work here without a dedicated transport — point base_url at
+  # them and list the models they serve.
+  #
+  # ollama:
+  #   type: openai_compatible
+  #   base_url: http://ollama:11434/v1
+  #   models: [llama3.2, qwen2.5-coder]
+  #
+  # vllm:
+  #   type: openai_compatible
+  #   base_url: http://vllm:8000/v1
+  #   models: [meta-llama/Llama-3.1-8B-Instruct]
+  #
   # custom_vps:
   #   type: openai_compatible
   #   base_url: https://models.example.internal/v1

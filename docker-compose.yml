@@ -23,6 +23,7 @@ services:
       - YOZHAN_SKILLS_DIR=/app/skills
       - YOZHAN_USER_SKILLS_DIR=/app/user-skills
       - YOZHAN_WORKSPACE_DIR=/app/workspace
+      - YOZHAN_BROWSER_URL=${YOZHAN_BROWSER_URL:-}
     volumes:
       - ./config:/app/config
       - runtime_data:/app/data
@@ -70,6 +71,17 @@ services:
     ports:
       - "${GATEWAY_PORT:-3000}:3000"
     depends_on: [runtime]
+    networks: [yozhan_internal]
+
+  # ---- Headless browser (optional) ----------------------------------------
+  # Chromium is several hundred MB, so it runs in its own container rather than
+  # bloating the runtime image. Opt in with COMPOSE_PROFILES=browser.
+  browser:
+    image: mcr.microsoft.com/playwright:v1.49.0-noble
+    profiles: [browser]
+    restart: unless-stopped
+    command: >
+      npx -y playwright@1.49.0 run-server --port 3000 --host 0.0.0.0
     networks: [yozhan_internal]
 
 volumes:

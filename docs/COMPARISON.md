@@ -23,8 +23,7 @@ These come up in more than one of the three, and are the largest gaps.
 
 | Capability | Who has it | Notes |
 |---|---|---|
-| **MCP (Model Context Protocol)** | OpenClaw | No client and no server. yozhan tools are local `tool.py` files only. The single mention of MCP in an early architecture diagram was aspirational and has been removed. |
-| **Slash commands** (`/model`, `/newsession`, …) | Hermes, OpenClaw | No in-chat or in-channel command parsing anywhere. Model selection is config or a CLI flag; sessions are chosen with `--session`. |
+| **MCP server** | OpenClaw | yozhan is an MCP *client* (any stdio server's tools are usable), but does not expose its own tools over MCP to other applications. |
 | **TUI** | Hermes | yozhan's CLI is a plain prompt/response REPL — no panes, mouse selection, or modal overlays. |
 | **Plugin system** (third-party code extending the runtime) | OpenClaw, Hermes | yozhan has skills, not plugins. You cannot register a new provider type, channel, or memory backend without editing the source. |
 | **Skill registry / marketplace** | All three | No ClawHub/Skills-Hub/`skill install <url>` equivalent. Skills are files you write or the learning loop proposes. |
@@ -46,9 +45,10 @@ Intelligence Lab.
   `operative`, `monitor_operative`, `RLMAgent`, `ClaudeCodeAgent` and others.
   yozhan has one concrete agent (`ChatAgent`) that every configured agent runs
   as; the variation is in model assignment and mode, not in agent architecture.
-- **Multiple inference backends** — Ollama, vLLM, SGLang behind one
-  `InferenceEngine` interface, with health-probing auto-discovery and
-  fallback. yozhan speaks only llama.cpp locally (plus remote HTTP providers).
+- **Auto-discovering inference backends** — Ollama, vLLM and SGLang behind one
+  `InferenceEngine` interface with health probing. yozhan reaches all three
+  through its OpenAI-compatible provider type, but you configure them by hand
+  rather than having them discovered.
 - **Retrieval backends** — FAISS, ColBERTv2, BM25 and RRF hybrid fusion.
 - **Learned routing** — `TraceDrivenPolicy` and a GRPO-based router policy that
   learn which model to use from past traces. yozhan's routing is static
@@ -71,7 +71,7 @@ Personal-assistant gateway; by far the largest surface of the three.
 - **~45 more channels** — WhatsApp, Signal, iMessage, Matrix, Microsoft Teams,
   Google Chat, IRC, Line, WeChat, Zalo and more. yozhan has three: Telegram,
   Discord, Slack.
-- **MCP support.**
+- **An MCP *server*** — OpenClaw both consumes and exposes MCP; yozhan only consumes.
 - **A real plugin SDK** — `openclaw.plugin.json` manifests validated without
   executing code, typed `api.register*()` hooks for model providers, speech,
   embeddings and channels, plus auto-detection of Agent Plugins / Codex /
@@ -99,18 +99,16 @@ Self-improving agent from Nous Research.
 
 **Not in yozhan:**
 
-- **70+ tools across 28 toolsets**, self-registering. yozhan ships five skills,
-  two of which are stubs or examples.
-- **Slash commands and a rich CLI surface** — `/model`, `hermes doctor`,
-  `hermes setup`, `hermes tools`, `--continue`/`--resume`,
-  interrupt-and-redirect mid-turn, and `-w` to run an agent in an isolated git
-  worktree.
+- **70+ tools across 28 toolsets**, self-registering. yozhan ships seven
+  skills, one of which is a stub — though MCP now closes much of this gap, since
+  any MCP server's tools become usable.
+- **A richer CLI surface** — `hermes doctor`, `hermes setup`,
+  `--continue`/`--resume`, interrupt-and-redirect mid-turn, and `-w` to run an
+  agent in an isolated git worktree. (yozhan now has slash commands, but not
+  these.)
 - **A full TUI.**
 - **Seven execution backends** — local, Docker, SSH, Singularity, Modal,
   Daytona, Vercel Sandbox, including hibernate-on-idle serverless.
-- **`session_search`** — literal full-text search over past conversations
-  exposed *to the agent as a tool*. yozhan stores and indexes the same data but
-  only exposes it to the operator, not to the model.
 - **Pluggable memory providers** (Honcho and others) for cross-session user
   modelling.
 - **OAuth for provider auth** and ~18 providers. yozhan is API-key only, with

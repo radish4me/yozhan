@@ -69,6 +69,8 @@ const API_PREFIXES = [
   "/secrets",
   "/memory",
   "/orchestrate",
+  "/mcp",
+  "/commands",
 ];
 
 if (hasDashboard) {
@@ -147,6 +149,8 @@ const PROXIED = [
   "/secrets/*",
   "/memory/*",
   "/orchestrate",
+  "/mcp",
+  "/commands",
 ];
 for (const path of PROXIED) {
   app.all(path, proxyToRuntime);

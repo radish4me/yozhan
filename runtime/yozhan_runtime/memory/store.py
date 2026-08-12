@@ -79,6 +79,13 @@ class SessionStore(MemoryBackend):
             );
             CREATE INDEX IF NOT EXISTS traces_task_idx ON traces(task_id);
 
+            CREATE TABLE IF NOT EXISTS session_settings (
+                session_id TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT,
+                PRIMARY KEY (session_id, key)
+            );
+
             CREATE TABLE IF NOT EXISTS skill_proposals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 task_id TEXT,
@@ -190,6 +197,40 @@ class SessionStore(MemoryBackend):
             """
         ).fetchall()
         return [dict(row) for row in rows]
+
+    # --- per-session settings (slash commands) ----------------------------
+
+    def set_setting(self, session_id: str, key: str, value: str | None) -> None:
+        """A per-session override, e.g. the model chosen with /model.
+
+        Stored rather than held in memory because a channel or dashboard turn
+        builds a fresh agent each time — there is no long-lived object to keep
+        it on.
+        """
+        if value is None:
+            self._conn.execute(
+                "DELETE FROM session_settings WHERE session_id = ? AND key = ?", (session_id, key)
+            )
+        else:
+            self._conn.execute(
+                "INSERT INTO session_settings (session_id, key, value) VALUES (?, ?, ?) "
+                "ON CONFLICT(session_id, key) DO UPDATE SET value = excluded.value",
+                (session_id, key, value),
+            )
+        self._conn.commit()
+
+    def get_setting(self, session_id: str, key: str) -> str | None:
+        row = self._conn.execute(
+            "SELECT value FROM session_settings WHERE session_id = ? AND key = ?", (session_id, key)
+        ).fetchone()
+        return row["value"] if row else None
+
+    def clear_session(self, session_id: str) -> int:
+        """Drops a session's conversation history. Traces are kept — they are
+        the record of what happened, and the learning loop reads them."""
+        cursor = self._conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+        self._conn.commit()
+        return cursor.rowcount
 
     # --- staged skill proposals (learning loop) ---------------------------
 

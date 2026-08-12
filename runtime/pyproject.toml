@@ -18,6 +18,10 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
+# The browser client. Kept optional because it is only useful alongside the
+# `browser` compose service, and the runtime image should stay small for
+# people who never enable it.
+browser = ["playwright>=1.49"]
 
 [project.scripts]
 yozhan = "yozhan_runtime.cli:main"

@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY runtime/pyproject.toml /app/runtime/pyproject.toml
 COPY runtime/yozhan_runtime /app/runtime/yozhan_runtime
-RUN pip install --no-cache-dir -e /app/runtime
+RUN pip install --no-cache-dir -e '/app/runtime[browser]'
 
 COPY config /app/config
 COPY skills /app/skills

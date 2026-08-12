@@ -19,6 +19,7 @@ from yozhan_runtime.agents.orchestrator import Orchestrator
 from yozhan_runtime.agents.resolve import AgentConfigError, resolve_agent
 from yozhan_runtime.config import load_agents, load_providers, skills_dirs, user_skills_dir
 from yozhan_runtime.learning.reviewer import apply_proposal, reviewer_from_config
+from yozhan_runtime.mcp import MCPManager, servers_from_config
 from yozhan_runtime.memory.curated import CuratedMemory, MemoryCapExceeded
 from yozhan_runtime.memory.store import SessionStore
 from yozhan_runtime.providers.router import ProviderError, ProviderRouter
@@ -27,15 +28,21 @@ from yozhan_runtime.scheduling.scheduler import Scheduler
 from yozhan_runtime.skills.manager import SkillManager
 
 
-def _build_runtime(agent_name: str | None = None):
+def _build_runtime(agent_name: str | None = None, with_mcp: bool = False):
     """The standard set of runtime objects every command needs."""
+    agents_config = load_agents()
     router = ProviderRouter()
-    policy = sandbox_from_config(load_agents(), agent_name)
+    policy = sandbox_from_config(agents_config, agent_name)
     skills = SkillManager(skills_dirs(), sandbox_policy=policy)
     skills.discover()
     memory = SessionStore()
     curated = CuratedMemory()
-    return router, skills, memory, curated
+
+    mcp = None
+    if with_mcp:
+        mcp = MCPManager(servers_from_config(agents_config))
+        mcp.start()
+    return router, skills, memory, curated, mcp
 
 
 @click.group()
@@ -48,8 +55,9 @@ def main():
 @click.option("--session", default="default", help="Session id — history persists across restarts under this id.")
 def chat(model: str | None, session: str):
     """Start an interactive chat REPL against the local llama.cpp model."""
-    router, skills, memory, curated = _build_runtime()
-    reviewer = reviewer_from_config(memory, router, load_agents(), load_providers())
+    agents_config, providers_config = load_agents(), load_providers()
+    router, skills, memory, curated, mcp = _build_runtime(with_mcp=True)
+    reviewer = reviewer_from_config(memory, router, agents_config, providers_config)
     agent = ChatAgent(
         router=router,
         skills=skills,
@@ -57,12 +65,15 @@ def chat(model: str | None, session: str):
         session_id=session,
         model=model,
         curated=curated,
+        mcp=mcp,
+        agents_config=agents_config,
+        providers_config=providers_config,
     )
 
-    tool_names = [s.tool_name for s in skills.discovered() if s.tool_name]
+    tool_count = len(skills.as_openai_tools()) + len(mcp.as_openai_tools() if mcp else [])
     click.echo(
         f"yozhan chat — model: {model or router.default_local_model()} | session: {session} | "
-        f"tools: {', '.join(tool_names) or 'none'} (Ctrl-D to exit)"
+        f"{tool_count} tools | /help for commands (Ctrl-D to exit)"
     )
     while True:
         try:
@@ -77,6 +88,8 @@ def chat(model: str | None, session: str):
             continue
         click.echo(f"yozhan> {result.output}")
 
+        if result.metadata.get("command"):
+            continue
         if reviewer is not None and agent.last_task_id:
             try:
                 proposal_id = reviewer.review_task(
@@ -118,7 +131,7 @@ def list_agents():
 )
 def orchestrate(assignments: tuple[tuple[str, str], ...]):
     """Dispatch tasks to named agents, each resolving its own model assignment."""
-    router, skills, memory, curated = _build_runtime()
+    router, skills, memory, curated, mcp = _build_runtime(with_mcp=True)
     agents_config, providers_config = load_agents(), load_providers()
     orchestrator = Orchestrator(
         router=router,
@@ -128,6 +141,7 @@ def orchestrate(assignments: tuple[tuple[str, str], ...]):
         providers_config=providers_config,
         curated=curated,
         reviewer=reviewer_from_config(memory, router, agents_config, providers_config),
+        mcp=mcp,
     )
 
     for dispatched in orchestrator.dispatch_many(list(assignments)):
@@ -184,7 +198,7 @@ def learn():
 @click.option("--limit", default=5, help="How many recent tasks to review.")
 def learn_review(session: str, limit: int):
     """Run the learning reviewer over recent tasks and stage any proposals."""
-    router, skills, memory, _ = _build_runtime()
+    router, skills, memory, _, _ = _build_runtime()
     reviewer = reviewer_from_config(memory, router, load_agents(), load_providers())
     if reviewer is None:
         raise click.ClickException("learning is disabled — set learning.enabled: true in config/agents.yaml")
@@ -281,7 +295,7 @@ def costs(by: str):
 @main.command()
 def scheduler():
     """Run scheduled and continuous agents (ticks once a minute)."""
-    router, skills, memory, curated = _build_runtime()
+    router, skills, memory, curated, mcp = _build_runtime(with_mcp=True)
     agents_config, providers_config = load_agents(), load_providers()
     orchestrator = Orchestrator(
         router=router,
@@ -291,6 +305,7 @@ def scheduler():
         providers_config=providers_config,
         curated=curated,
         reviewer=reviewer_from_config(memory, router, agents_config, providers_config),
+        mcp=mcp,
     )
     loop = Scheduler(orchestrator, agents_config)
     if loop.agents:

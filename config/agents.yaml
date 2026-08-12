@@ -26,6 +26,26 @@ learning:
   min_tool_calls: 3
   fallback_chain: local_first   # the reviewer itself is a cheap background job
 
+# Model Context Protocol servers. Their tools appear alongside yozhan's own
+# skills, namespaced as mcp__<server>__<tool> so two servers can both expose a
+# `search` without colliding.
+#
+# Servers are launched as subprocesses over stdio, so `command` must exist in
+# the runtime container. A server that fails to start is logged and skipped —
+# it never stops yozhan from starting. Check status with /mcp.
+mcp:
+  enabled: false
+  servers: []
+  # servers:
+  #   - name: filesystem
+  #     command: npx
+  #     args: ["-y", "@modelcontextprotocol/server-filesystem", "/app/workspace"]
+  #   - name: git
+  #     command: uvx
+  #     args: ["mcp-server-git", "--repository", "/app/workspace"]
+  #     env:
+  #       SOME_TOKEN: ${SOME_TOKEN:-}
+
 # Agent-to-agent interop (ROADMAP.md Phase 8). Off by default: enabling it
 # both exposes this agent to other agents and lets it call out to them.
 a2a:

@@ -27,6 +27,7 @@ from yozhan_runtime.config import skills_dirs, user_skills_dir
 from yozhan_runtime.config_store import CONFIG_FILES, ConfigStore, ConfigValidationError
 from yozhan_runtime.learning.reviewer import apply_proposal, reviewer_from_config
 from yozhan_runtime.memory.curated import CuratedMemory, MemoryCapExceeded
+from yozhan_runtime.mcp import MCPManager, servers_from_config
 from yozhan_runtime.memory.store import SessionStore
 from yozhan_runtime.providers.router import ProviderError, ProviderRouter
 from yozhan_runtime.sandbox.policy import sandbox_from_config
@@ -60,10 +61,20 @@ def runtime():
         router = ProviderRouter(config=providers_config)
         skills = SkillManager(skills_dirs(), sandbox_policy=sandbox_from_config(agents_config))
         skills.discover()
+
+        # MCP servers are subprocesses; stop the old set before starting a new
+        # one, or a config reload leaks a process per edit.
+        previous = _cached.get("mcp")
+        if previous is not None:
+            previous.stop()
+        mcp = MCPManager(servers_from_config(agents_config))
+        mcp.start()
+
         _cached.update(
             signature=signature,
             router=router,
             skills=skills,
+            mcp=mcp,
             orchestrator=Orchestrator(
                 router=router,
                 skills=skills,
@@ -125,6 +136,9 @@ def chat(request: ChatRequest):
         session_id=request.session_id,
         model=request.model,
         curated=_curated,
+        mcp=rt["mcp"],
+        agents_config=config.agents(),
+        providers_config=config.providers(),
     )
     try:
         result = agent.run(request.message)
@@ -171,6 +185,20 @@ def list_agents():
         except AgentConfigError as exc:
             out.append({"name": name, "error": str(exc)})
     return out
+
+
+@app.get("/mcp")
+def list_mcp():
+    """MCP servers and their status — powers /mcp and the dashboard."""
+    return runtime()["mcp"].describe()
+
+
+@app.get("/commands")
+def list_commands():
+    """The slash commands available, so the dashboard can show them."""
+    from yozhan_runtime.commands import COMMANDS
+
+    return [{"name": c.name, "usage": c.usage, "summary": c.summary} for c in COMMANDS.values()]
 
 
 @app.get("/skills")
@@ -436,6 +464,7 @@ if _a2a_config.get("enabled", False):
             session_id=session_id,
             curated=_curated,
             agent_name="a2a",
+            mcp=rt["mcp"],
         )
         try:
             return agent.run(text).output

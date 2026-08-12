@@ -289,6 +289,70 @@ shows a warning banner until it sees a secure connection. See
 [PORTAINER.md](PORTAINER.md#put-it-behind-nginx-do-this-before-exposing-it)
 for an nginx site file.
 
+### Slash commands
+
+Type `/help` anywhere — the CLI, a channel, or the dashboard — for the list.
+They're handled in the runtime, so all three behave identically, and they run
+before the model call, so they cost nothing.
+
+| Command | Does |
+|---|---|
+| `/new` | Clear this conversation (traces are kept) |
+| `/model [id]` | Show or set the model **for this session** |
+| `/models` | List every configured model |
+| `/session` | This session's id, message count and overrides |
+| `/agents` `/skills` `/tools` `/mcp` | What's configured and callable |
+| `/memory` `/remember <note>` `/forget <text>` | Curated cross-session memory |
+| `/search <query>` | Search past conversations |
+| `/costs [agent\|model\|provider]` | Cost and latency summary |
+| `/skill new <name>` | Scaffold a skill to review and save |
+
+`/model` is per session, so Telegram and the dashboard can be on different
+models at once. Ordinary messages that merely contain a slash — `what is 1/2`,
+`/etc/hosts is a file` — are not treated as commands.
+
+### MCP servers
+
+Any stdio MCP server's tools can be used alongside yozhan's own skills. Add
+them under `mcp:` in `config/agents.yaml`:
+
+```yaml
+mcp:
+  enabled: true
+  servers:
+    - name: filesystem
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/app/workspace"]
+```
+
+Tools appear as `mcp__filesystem__read_file`, namespaced so two servers can
+both expose a `search`. `command` must exist inside the runtime container —
+`npx` needs Node in the image, so a server you can't install is a good reason
+to prefer one written in Python.
+
+A server that fails to start is logged and skipped rather than stopping
+yozhan; `/mcp` shows which connected and why the others didn't.
+
+### The headless browser
+
+`web_browse` opens a page in real Chromium, so JavaScript-rendered content is
+visible — a plain HTTP fetch returns the empty shell of a modern site.
+
+Chromium is far too large to bake into the runtime image, so it runs as its
+own opt-in container:
+
+```bash
+COMPOSE_PROFILES=browser docker compose up -d
+```
+
+Then set `YOZHAN_BROWSER_URL=ws://browser:3000`. Without it the tool returns a
+message saying so rather than failing obscurely.
+
+It is deliberately **read-only** — text, links, title or HTML, with no clicking
+or form filling. Anything that changes state on a website is a decision a
+person should make. It also refuses private and link-local addresses, so a
+page cannot talk the model into fetching your cloud metadata endpoint.
+
 ### Messaging channels
 
 Set the token, restart, then message the bot. **It will not answer yet** —

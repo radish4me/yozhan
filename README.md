@@ -63,7 +63,9 @@ yozhan have that it does not.
 - Runs on a 2-4 vCPU / 4-8 GB VPS
 
 ### Model providers and routing
-- Multiple providers: OpenAI, Anthropic, Gemini, Grok, OpenRouter, local llama.cpp, and any OpenAI-compatible endpoint
+- Multiple providers: OpenAI, Anthropic, Gemini, Grok, OpenRouter, local
+  llama.cpp, and any OpenAI-compatible endpoint — which includes Ollama, vLLM
+  and SGLang
 - **Multiple models per provider**, all usable at once
 - **Fallback chains** — ordered, user-editable; on error/rate-limit/timeout the router walks to the next entry
 - **Multiple API keys per provider**, rotating automatically on 401/403/429
@@ -77,12 +79,41 @@ yozhan have that it does not.
 - Agent-level sandbox overrides
 - Built-in scheduler process for unattended agents
 
+### Slash commands
+Work identically in the CLI, in any channel, and in the dashboard, because
+they are handled in the runtime rather than per front end. They run before the
+model call, so `/help` costs nothing.
+
+`/help` `/new` `/model` `/models` `/session` `/agents` `/skills` `/skill new`
+`/tools` `/mcp` `/memory` `/remember` `/forget` `/search` `/costs`
+
+`/model` is remembered per session, so a Telegram chat and the dashboard can
+be on different models at once.
+
+### MCP (Model Context Protocol)
+- Client for any stdio MCP server — filesystem, git, databases, and the rest
+  of the ecosystem
+- Their tools appear alongside yozhan's own, namespaced `mcp__<server>__<tool>`
+  so two servers can both expose a `search`
+- A server that fails to start is logged and skipped, never fatal; `/mcp` shows
+  which connected and why the others didn't
+
 ### Skills and tools
 - One `SKILL.md` format everywhere (agentskills.io-compatible frontmatter)
 - Optional `tool.py` per skill, exposed to the model as a callable tool
-- Built-in skills: `read-file`, `web-search` (stub), `memory-note`, `a2a-peer`, `example-echo`
+- Built-in skills: `read-file`, `web-browse`, `session-search`, `memory-note`,
+  `web-search` (stub), `a2a-peer`, `example-echo`
 - User skills directory kept separate from shipped ones
 - Create/edit/delete skills from the dashboard
+
+### Headless browser
+- Real Chromium via Playwright, so JavaScript-rendered pages are readable —
+  a plain fetch returns the empty shell of a modern site
+- Runs as a **separate, opt-in container**; Chromium is far too large to bake
+  into the runtime image on a small VPS
+- Read-only: rendered text, links, title or HTML. No clicking or form filling
+- Refuses private and link-local addresses, so a page cannot talk yozhan into
+  fetching your cloud metadata endpoint
 
 ### Memory and learning
 - SQLite + FTS5 session store; history persists across restarts, per session id
@@ -130,10 +161,12 @@ yozhan have that it does not.
 
 Called out explicitly so the list above can be trusted:
 
-- **No MCP (Model Context Protocol)** client or server
-- **No slash commands** (`/model`, `/newsession`, `/skillcreate`, …) in chat or channels
+- **No MCP server** — yozhan is an MCP *client*; it doesn't expose its own
+  tools over MCP to other applications
 - **No TUI**; the CLI is a plain REPL
 - **No voice, image, or file attachments** on any channel
+- **No plugin system** — skills, not plugins; adding a provider type, channel
+  or memory backend still means editing the source
 - **No WhatsApp, Signal, iMessage, Matrix, Teams** or other channels beyond the three above
 - **No skill marketplace/registry** — skills are local files
 - **No vector/semantic memory** — full-text search only

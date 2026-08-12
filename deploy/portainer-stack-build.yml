@@ -57,6 +57,8 @@ services:
       YOZHAN_SKILLS_DIR: /app/skills
       YOZHAN_USER_SKILLS_DIR: /app/user-skills
       YOZHAN_WORKSPACE_DIR: /app/workspace
+      # Set to ws://browser:3000 after enabling the browser profile.
+      YOZHAN_BROWSER_URL: ${YOZHAN_BROWSER_URL:-}
       HF_TOKEN: ${HF_TOKEN:-}
       ANTHROPIC_API_KEY_1: ${ANTHROPIC_API_KEY_1:-}
       ANTHROPIC_API_KEY_2: ${ANTHROPIC_API_KEY_2:-}
@@ -96,6 +98,17 @@ services:
       - "${GATEWAY_BIND:-0.0.0.0}:${GATEWAY_PORT:-3000}:3000"
     volumes:
       - gateway_data:/app/gateway/data
+    networks: [yozhan]
+
+  # ---- Headless browser (optional) ----------------------------------------
+  # Chromium is several hundred MB, so it runs in its own container rather than
+  # bloating the runtime image. Opt in with COMPOSE_PROFILES=browser.
+  browser:
+    image: mcr.microsoft.com/playwright:v1.49.0-noble
+    profiles: [browser]
+    restart: unless-stopped
+    command: >
+      npx -y playwright@1.49.0 run-server --port 3000 --host 0.0.0.0
     networks: [yozhan]
 
 volumes:
