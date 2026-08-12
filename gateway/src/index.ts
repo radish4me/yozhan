@@ -71,6 +71,8 @@ const API_PREFIXES = [
   "/orchestrate",
   "/mcp",
   "/commands",
+  "/credentials",
+  "/credentials/*",
 ];
 
 if (hasDashboard) {
@@ -151,6 +153,8 @@ const PROXIED = [
   "/orchestrate",
   "/mcp",
   "/commands",
+  "/credentials",
+  "/credentials/*",
 ];
 for (const path of PROXIED) {
   app.all(path, proxyToRuntime);

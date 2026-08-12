@@ -75,6 +75,9 @@ yozhan have that it does not.
 ### Agents
 - `BaseAgent` with on-demand, **scheduled** (cron), and **continuous** (interval) modes
 - Orchestrator dispatching across multiple agents, each independently model-assigned
+- **Sub-agent delegation**: an agent can hand a sub-task to another agent
+  mid-task via a `delegate` tool, with a depth limit so a delegation chain
+  can't run away
 - Per-agent and per-sub-agent model assignment; sub-agents override independently of their parent
 - Agent-level sandbox overrides
 - Built-in scheduler process for unattended agents
@@ -91,8 +94,10 @@ model call, so `/help` costs nothing.
 be on different models at once.
 
 ### MCP (Model Context Protocol)
-- Client for any stdio MCP server — filesystem, git, databases, and the rest
-  of the ecosystem
+- Client for **stdio and HTTP** MCP servers — filesystem, git, databases, and
+  hosted ones
+- **Auth**: static bearer tokens, or the OAuth 2 client_credentials grant with
+  token caching and automatic refresh when a server returns 401
 - Their tools appear alongside yozhan's own, namespaced `mcp__<server>__<tool>`
   so two servers can both expose a `search`
 - A server that fails to start is logged and skipped, never fatal; `/mcp` shows
@@ -114,9 +119,15 @@ be on different models at once.
 - Read-only: rendered text, links, title or HTML. No clicking or form filling
 - Refuses private and link-local addresses, so a page cannot talk yozhan into
   fetching your cloud metadata endpoint
+- **Signs into sites** using an encrypted, domain-bound credential vault. The
+  model never sees a password — it names a site, and the tool injects the
+  credential. A credential stored for one host is refused everywhere else,
+  including lookalikes, so a page you're reading cannot redirect it
 
 ### Memory and learning
 - SQLite + FTS5 session store; history persists across restarts, per session id
+- **Multiple named sessions per surface** — `/session work`, `/session list`;
+  one Telegram chat can hold several separate conversations
 - Curated cross-session memory (`MEMORY.md` / `USER.md`), size-capped, injected at session start
 - Full trace log: every model and tool call with latency, tokens, cost, success/failure
 - **Self-improving loop** — writes a reusable `SKILL.md` from a task's trace

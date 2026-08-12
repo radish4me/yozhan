@@ -10,8 +10,9 @@ top to bottom. Bridging an event loop into every tool call would add more
 moving parts than the protocol itself needs — MCP over stdio is JSON-RPC 2.0
 with a handshake, and that is about a hundred lines.
 
-Only stdio is supported. It covers essentially every MCP server shipped as a
-command, and it avoids exposing yozhan to a remote server's transport quirks.
+Two transports: stdio for servers you run as a command, and Streamable HTTP
+(http_transport.py) for hosted ones, which is where authentication matters —
+bearer tokens and the OAuth client_credentials grant are both supported there.
 """
 
 from __future__ import annotations
@@ -60,9 +61,13 @@ class MCPTool:
 @dataclass
 class MCPServerConfig:
     name: str
-    command: str
+    transport: str = "stdio"          # "stdio" | "http"
+    command: str = ""                 # stdio
     args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
+    url: str = ""                     # http
+    auth: dict = field(default_factory=dict)
+    headers: dict = field(default_factory=dict)
     enabled: bool = True
 
 
@@ -73,13 +78,21 @@ class MCPServer:
         self.config = config
         self.timeout = timeout
         self._process: subprocess.Popen | None = None
+        self._http = None
         self._next_id = 0
         self._lock = threading.Lock()  # one request at a time per server
         self.tools: list[MCPTool] = []
 
+    @property
+    def is_http(self) -> bool:
+        return self.config.transport == "http"
+
     # --- process lifecycle ---------------------------------------------------
 
     def start(self) -> None:
+        if self.is_http:
+            self._start_http()
+            return
         if self._process is not None:
             return
         env = {**os.environ, **self.config.env}
@@ -100,7 +113,33 @@ class MCPServer:
         self._handshake()
         self.tools = self._list_tools()
 
+    def _start_http(self) -> None:
+        if self._http is not None:
+            return
+        from yozhan_runtime.mcp.http_transport import HTTPTransport, MCPAuthError, build_auth
+
+        if not self.config.url:
+            raise MCPError(f"MCP server '{self.config.name}': transport is http but no url is configured")
+        try:
+            auth = build_auth(self.config.auth)
+        except MCPAuthError as exc:
+            raise MCPError(f"MCP server '{self.config.name}': {exc}") from exc
+
+        self._http = HTTPTransport(
+            name=self.config.name,
+            url=self.config.url,
+            auth=auth,
+            headers=self.config.headers,
+            timeout=self.timeout,
+        )
+        self._handshake()
+        self.tools = self._list_tools()
+
     def stop(self) -> None:
+        if self._http is not None:
+            self._http.close()
+            self._http = None
+            return
         if self._process is None:
             return
         try:
@@ -129,7 +168,22 @@ class MCPServer:
         with self._lock:
             self._next_id += 1
             request_id = self._next_id
-            self._send({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}})
+            payload = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}}
+
+            if self._http is not None:
+                try:
+                    message = self._http.request(payload)
+                except Exception as exc:
+                    raise MCPError(f"{self.config.name}.{method}: {exc}") from exc
+                if message is None:
+                    raise MCPError(f"MCP server '{self.config.name}' sent no response to {method}")
+                if "error" in message:
+                    raise MCPError(
+                        f"{self.config.name}.{method}: {message['error'].get('message', message['error'])}"
+                    )
+                return message.get("result", {})
+
+            self._send(payload)
 
             # Servers may interleave notifications (logging, progress); skip
             # anything that isn't the response we're waiting for.
@@ -144,7 +198,14 @@ class MCPServer:
 
     def _notify(self, method: str, params: dict | None = None) -> None:
         with self._lock:
-            self._send({"jsonrpc": "2.0", "method": method, "params": params or {}})
+            payload = {"jsonrpc": "2.0", "method": method, "params": params or {}}
+            if self._http is not None:
+                try:
+                    self._http.request(payload)
+                except Exception as exc:  # a notification failing is not fatal
+                    logger.debug("MCP notification %s to '%s' failed: %s", method, self.config.name, exc)
+                return
+            self._send(payload)
 
     def _handshake(self) -> None:
         self._request(
@@ -243,7 +304,9 @@ class MCPManager:
             out.append(
                 {
                     "name": config.name,
-                    "command": f"{config.command} {' '.join(config.args)}".strip(),
+                    "transport": config.transport,
+                    "auth": (config.auth or {}).get("type", "none"),
+                    "command": config.url or f"{config.command} {' '.join(config.args)}".strip(),
                     "connected": server is not None,
                     "error": self.errors.get(config.name),
                     "tools": [t.name for t in (server.tools if server else [])],
@@ -258,15 +321,30 @@ def servers_from_config(agents_config: dict) -> list[MCPServerConfig]:
         return []
     out = []
     for entry in mcp_config.get("servers") or []:
-        if not entry.get("name") or not entry.get("command"):
-            logger.warning("skipping MCP server entry without a name and command: %r", entry)
+        name = entry.get("name")
+        # A url implies http even if transport wasn't spelled out.
+        transport = (entry.get("transport") or ("http" if entry.get("url") else "stdio")).lower()
+
+        if not name:
+            logger.warning("skipping MCP server entry without a name: %r", entry)
             continue
+        if transport == "stdio" and not entry.get("command"):
+            logger.warning("skipping stdio MCP server '%s': no command", name)
+            continue
+        if transport == "http" and not entry.get("url"):
+            logger.warning("skipping http MCP server '%s': no url", name)
+            continue
+
         out.append(
             MCPServerConfig(
-                name=entry["name"],
-                command=entry["command"],
+                name=name,
+                transport=transport,
+                command=entry.get("command", ""),
                 args=list(entry.get("args") or []),
                 env={k: str(v) for k, v in (entry.get("env") or {}).items()},
+                url=entry.get("url", ""),
+                auth=entry.get("auth") or {},
+                headers={k: str(v) for k, v in (entry.get("headers") or {}).items()},
                 enabled=entry.get("enabled", True),
             )
         )

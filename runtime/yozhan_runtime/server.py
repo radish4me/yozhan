@@ -25,6 +25,7 @@ from yozhan_runtime.agents.orchestrator import Orchestrator
 from yozhan_runtime.agents.resolve import AgentConfigError, resolve_agent
 from yozhan_runtime.config import skills_dirs, user_skills_dir
 from yozhan_runtime.config_store import CONFIG_FILES, ConfigStore, ConfigValidationError
+from yozhan_runtime.credentials import CredentialError, CredentialVault
 from yozhan_runtime.learning.reviewer import apply_proposal, reviewer_from_config
 from yozhan_runtime.memory.curated import CuratedMemory, MemoryCapExceeded
 from yozhan_runtime.mcp import MCPManager, servers_from_config
@@ -117,6 +118,13 @@ class SkillWrite(BaseModel):
     content: str
 
 
+class CredentialWrite(BaseModel):
+    name: str
+    host: str
+    username: str
+    password: str
+
+
 class MemoryWrite(BaseModel):
     content: str
 
@@ -139,6 +147,7 @@ def chat(request: ChatRequest):
         mcp=rt["mcp"],
         agents_config=config.agents(),
         providers_config=config.providers(),
+        config_store=config,
     )
     try:
         result = agent.run(request.message)
@@ -357,6 +366,34 @@ def delete_secret(name: str):
     except SecretError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     _cached["signature"] = None
+    return {"deleted": name}
+
+
+# --- website credentials ---------------------------------------------------
+
+
+@app.get("/credentials")
+def list_credentials():
+    """Names, hosts and usernames. Passwords are never returned — that is the
+    whole point of keeping them here rather than in the conversation."""
+    return [c.__dict__ for c in CredentialVault().list()]
+
+
+@app.put("/credentials")
+def set_credential(body: CredentialWrite):
+    try:
+        info = CredentialVault().store(body.name, body.host, body.username, body.password)
+    except CredentialError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return info.__dict__
+
+
+@app.delete("/credentials/{name}")
+def delete_credential(name: str):
+    try:
+        CredentialVault().delete(name)
+    except CredentialError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"deleted": name}
 
 

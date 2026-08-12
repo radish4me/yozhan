@@ -20,14 +20,23 @@ from urllib.parse import urlparse
 
 NAME = "web_browse"
 DESCRIPTION = (
-    "Open a public web page in a real browser and read its rendered content. "
-    "Use this when a page needs JavaScript to render, or when you need the text a person would see."
+    "Open a web page in a real browser and read its rendered content. Use this when a page needs "
+    "JavaScript to render, or when you need the text a person would see. To read a page that "
+    "requires signing in, pass `login` with the name of a stored credential — you do not have, "
+    "and never need, the password itself."
 )
 PARAMETERS = {
     "type": "object",
     "properties": {
         "url": {"type": "string", "description": "Absolute http(s) URL"},
         "action": {"type": "string", "enum": ["text", "links", "title", "html"]},
+        "login": {
+            "type": "string",
+            "description": (
+                "Name of a stored credential to sign in with first. The credential is bound to a "
+                "specific site and will be refused elsewhere. Use list_credentials to see names."
+            ),
+        },
     },
     "required": ["url"],
 }
@@ -67,10 +76,71 @@ def _check_url(url: str) -> str | None:
     return None
 
 
-def run(url: str, action: str = "text") -> str:
+LOGIN_URL_HINTS = ("login", "signin", "sign-in", "auth", "session")
+
+
+def _sign_in(page, username: str, password: str) -> str | None:
+    """Fills the first credible username/password pair on the page and submits.
+
+    Returns an error string, or None on success. Deliberately simple: this
+    handles the ordinary case of a form with a password field. Anything with a
+    CAPTCHA, a second factor, or a multi-step flow is out of scope, and saying
+    so plainly beats a half-working guess.
+    """
+    password_field = page.query_selector("input[type=password]")
+    if password_field is None:
+        return "no password field found on the page — it may use a multi-step or scripted login"
+
+    user_field = None
+    for selector in (
+        "input[type=email]",
+        "input[name*=user i]",
+        "input[name*=email i]",
+        "input[id*=user i]",
+        "input[id*=email i]",
+        "input[type=text]",
+    ):
+        user_field = page.query_selector(selector)
+        if user_field is not None:
+            break
+    if user_field is None:
+        return "no username field found on the page"
+
+    user_field.fill(username)
+    password_field.fill(password)
+
+    submit = page.query_selector("button[type=submit], input[type=submit]")
+    if submit is not None:
+        submit.click()
+    else:
+        password_field.press("Enter")
+
+    try:
+        page.wait_for_load_state("networkidle", timeout=NAV_TIMEOUT_MS)
+    except Exception:
+        pass  # some sites never go idle; the assertions below still apply
+
+    if page.query_selector("input[type=password]") is not None:
+        return "still on a password form after submitting — the sign-in likely failed"
+    return None
+
+
+def run(url: str, action: str = "text", login: str | None = None) -> str:
     problem = _check_url(url)
     if problem:
         return f"error: {problem}"
+
+    credentials = None
+    if login:
+        # Resolved first, and against this URL, so the domain binding is
+        # enforced here rather than trusted to the caller — and so a mismatch
+        # is reported even when the browser service is down.
+        from yozhan_runtime.credentials import CredentialError, CredentialVault
+
+        try:
+            credentials = CredentialVault().resolve(login, url)
+        except CredentialError as exc:
+            return f"error: {exc}"
 
     endpoint = os.environ.get("YOZHAN_BROWSER_URL")
     if not endpoint:
@@ -91,6 +161,13 @@ def run(url: str, action: str = "text") -> str:
             try:
                 page = browser.new_page()
                 page.goto(url, timeout=NAV_TIMEOUT_MS, wait_until="domcontentloaded")
+
+                if credentials is not None:
+                    failure = _sign_in(page, *credentials)
+                    if failure:
+                        # Never echo the credential or the page's own error text
+                        # back to the model; a login page can say anything.
+                        return f"error signing in with '{login}': {failure}"
 
                 if action == "title":
                     return page.title()

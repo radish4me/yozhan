@@ -18,6 +18,7 @@ from yozhan_runtime.agents.chat_agent import ChatAgent
 from yozhan_runtime.agents.orchestrator import Orchestrator
 from yozhan_runtime.agents.resolve import AgentConfigError, resolve_agent
 from yozhan_runtime.config import load_agents, load_providers, skills_dirs, user_skills_dir
+from yozhan_runtime.config_store import ConfigStore
 from yozhan_runtime.learning.reviewer import apply_proposal, reviewer_from_config
 from yozhan_runtime.mcp import MCPManager, servers_from_config
 from yozhan_runtime.memory.curated import CuratedMemory, MemoryCapExceeded
@@ -68,6 +69,7 @@ def chat(model: str | None, session: str):
         mcp=mcp,
         agents_config=agents_config,
         providers_config=providers_config,
+        config_store=ConfigStore(),
     )
 
     tool_count = len(skills.as_openai_tools()) + len(mcp.as_openai_tools() if mcp else [])

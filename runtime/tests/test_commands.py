@@ -38,6 +38,7 @@ def make_ctx(tmp_path, mcp=None) -> CommandContext:
     skills.discover()
     return CommandContext(
         session_id="s1",
+        base_session_id="s1",
         memory=SessionStore(user_id="t", db_dir=tmp_path),
         skills=skills,
         curated=CuratedMemory(base_dir=tmp_path),
@@ -150,13 +151,41 @@ def test_model_sets_a_session_override(tmp_path):
     assert ctx.memory.get_setting("s1", SETTING_MODEL) == "lfm2.5"
 
 
-def test_model_warns_about_an_unknown_id_but_still_sets_it(tmp_path):
-    # providers.yaml may list remote models this doesn't enumerate, so refusing
-    # outright would block a legitimate choice.
+def test_an_unconfigured_model_is_refused_with_the_list(tmp_path):
+    # Accepting it silently would fail on the next message in a way that looks
+    # like the model is broken, rather than like it was never configured.
     ctx = make_ctx(tmp_path)
     out = dispatch("/model claude-sonnet-5", ctx)
-    assert "isn't one of the configured local models" in out
-    assert ctx.memory.get_setting("s1", SETTING_MODEL) == "claude-sonnet-5"
+    assert "No configured model matches" in out
+    assert "1. local/qwen3.5-0.8b" in out
+    assert ctx.memory.get_setting("s1", SETTING_MODEL) is None
+
+
+def test_model_can_be_picked_by_number(tmp_path):
+    ctx = make_ctx(tmp_path)
+    out = dispatch("/model 2", ctx)
+    assert "local/lfm2.5" in out
+    assert ctx.memory.get_setting("s1", SETTING_MODEL) == "lfm2.5"
+    assert ctx.memory.get_setting("s1", "provider") == "local"
+
+
+def test_an_out_of_range_number_is_refused(tmp_path):
+    ctx = make_ctx(tmp_path)
+    assert "No configured model matches" in dispatch("/model 99", ctx)
+
+
+def test_model_with_no_arguments_shows_a_numbered_list(tmp_path):
+    out = dispatch("/model", make_ctx(tmp_path))
+    assert "1. local/qwen3.5-0.8b" in out and "2. local/lfm2.5" in out
+    assert "/model add" in out
+
+
+def test_model_default_clears_provider_too(tmp_path):
+    ctx = make_ctx(tmp_path)
+    dispatch("/model 2", ctx)
+    dispatch("/model default", ctx)
+    assert ctx.memory.get_setting("s1", SETTING_MODEL) is None
+    assert ctx.memory.get_setting("s1", "provider") is None
 
 
 def test_model_default_clears_the_override(tmp_path):

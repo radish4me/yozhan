@@ -77,6 +77,10 @@ def validate_pair(agents: dict, providers: dict) -> None:
     if not isinstance(chains, dict):
         raise ConfigValidationError("`fallback_chains:` must be a mapping of name -> chain")
 
+    def declared_models(provider: str) -> list[str]:
+        spec = provider_map.get(provider) or {}
+        return [m["id"] if isinstance(m, dict) else m for m in (spec.get("models") or [])]
+
     for chain_name, chain in chains.items():
         entries = chain.get("members") if isinstance(chain, dict) else chain
         if not entries:
@@ -87,6 +91,16 @@ def validate_pair(agents: dict, providers: dict) -> None:
             if entry["provider"] not in provider_map:
                 raise ConfigValidationError(
                     f"chain '{chain_name}' references unknown provider '{entry['provider']}'"
+                )
+            # A chain pointing at a model the provider doesn't list is almost
+            # always a deletion or a typo. Catching it here is the difference
+            # between a clear refusal now and a puzzling failure at dispatch.
+            model = entry.get("model")
+            known = declared_models(entry["provider"])
+            if model and known and model not in known:
+                raise ConfigValidationError(
+                    f"chain '{chain_name}' references '{entry['provider']}/{model}', which that "
+                    f"provider does not list. Available: {', '.join(known)}"
                 )
 
     agent_map = agents.get("agents")

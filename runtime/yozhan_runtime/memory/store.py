@@ -225,6 +225,12 @@ class SessionStore(MemoryBackend):
         ).fetchone()
         return row["value"] if row else None
 
+    def list_sessions(self) -> list[tuple[str, int]]:
+        rows = self._conn.execute(
+            "SELECT session_id, COUNT(*) AS n FROM messages GROUP BY session_id ORDER BY MAX(id) DESC"
+        ).fetchall()
+        return [(row["session_id"], row["n"]) for row in rows]
+
     def clear_session(self, session_id: str) -> int:
         """Drops a session's conversation history. Traces are kept — they are
         the record of what happened, and the learning loop reads them."""

@@ -37,14 +37,32 @@ mcp:
   enabled: false
   servers: []
   # servers:
+  #   # stdio: a server you run as a command
   #   - name: filesystem
   #     command: npx
   #     args: ["-y", "@modelcontextprotocol/server-filesystem", "/app/workspace"]
-  #   - name: git
-  #     command: uvx
-  #     args: ["mcp-server-git", "--repository", "/app/workspace"]
-  #     env:
-  #       SOME_TOKEN: ${SOME_TOKEN:-}
+  #
+  #   # http: a hosted server, with a static token
+  #   - name: hosted
+  #     transport: http
+  #     url: https://mcp.example.com/mcp
+  #     auth:
+  #       type: bearer
+  #       token_env: MY_MCP_TOKEN      # set the value under Keys & tokens
+  #
+  #   # http: a hosted server using OAuth. Only the client_credentials grant is
+  #   # supported — the authorization-code grant needs a browser redirect and a
+  #   # human clicking approve, which a headless VPS cannot do. For a server
+  #   # that only offers auth-code, issue a long-lived token and use `bearer`.
+  #   - name: oauthed
+  #     transport: http
+  #     url: https://mcp.example.com/mcp
+  #     auth:
+  #       type: oauth2
+  #       token_url: https://auth.example.com/oauth/token
+  #       client_id_env: MCP_CLIENT_ID
+  #       client_secret_env: MCP_CLIENT_SECRET
+  #       scope: mcp.read mcp.write
 
 # Agent-to-agent interop (ROADMAP.md Phase 8). Off by default: enabling it
 # both exposes this agent to other agents and lets it call out to them.

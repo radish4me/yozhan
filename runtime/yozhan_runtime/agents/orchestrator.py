@@ -65,15 +65,17 @@ class Orchestrator:
     def learning_config(self) -> dict:
         return self._agents_config.get("learning", {}) or {}
 
-    def dispatch(self, agent_name: str, task: str, session_id: str | None = None) -> DispatchResult:
+    def dispatch(
+        self, agent_name: str, task: str, session_id: str | None = None, depth: int = 0
+    ) -> DispatchResult:
         resolved = resolve_agent(agent_name, self._agents_config, self._providers_config)
         session_id = session_id or agent_name
         if resolved.parallel_members:
             return self._dispatch_parallel(agent_name, resolved, task, session_id)
-        return self._dispatch_sequential(agent_name, resolved, task, session_id)
+        return self._dispatch_sequential(agent_name, resolved, task, session_id, depth)
 
     def _dispatch_sequential(
-        self, agent_name: str, resolved: ResolvedAgent, task: str, session_id: str
+        self, agent_name: str, resolved: ResolvedAgent, task: str, session_id: str, depth: int = 0
     ) -> DispatchResult:
         agent = ChatAgent(
             router=self.router,
@@ -86,6 +88,8 @@ class Orchestrator:
             mcp=self.mcp,
             agents_config=self._agents_config,
             providers_config=self._providers_config,
+            orchestrator=self,
+            depth=depth,
         )
         try:
             result = agent.run(task)
