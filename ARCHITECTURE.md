@@ -53,8 +53,8 @@ concrete component below.
 │  │ Orchestrator  │   │  Agent loop(s)      │   │  Skill / Tool layer       │    │
 │  │ (routes tasks │──▶│  on-demand /        │──▶│  SKILL.md + frontmatter   │    │
 │  │  to agents,   │   │  scheduled /        │   │  (agentskills.io format), │    │
-│  │  fan-out for  │   │  continuous         │   │  registered tools, MCP    │    │
-│  │  parallel     │   │  BaseAgent.run()    │   │  passthrough              │    │
+│  │  fan-out for  │   │  continuous         │   │  registered tools,        │    │
+│  │  parallel     │   │  BaseAgent.run()    │   │  sandboxed execution      │    │
 │  │  sub-agents)  │   └─────────┬───────────┘   └────────────┬──────────────┘    │
 │  └───────┬───────┘             │                            │                   │
 │          │                     ▼                            ▼                   │
