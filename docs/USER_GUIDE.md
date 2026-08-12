@@ -115,8 +115,27 @@ Use `--session work` to keep separate threads.
 
 ## 4. Configuration
 
-Two files do almost everything. Both are hot-reloaded — a change takes effect
-on the next task, no restart needed.
+Two files do almost everything, and you can edit them **from the dashboard**
+or on disk. Either way a change takes effect on the next task — no restart.
+
+### From the dashboard
+
+**Configuration** tab: a YAML editor for each file with three safeguards.
+
+- **Validate** checks a draft without saving. It runs the real resolver, so it
+  catches a mistyped chain name rather than only malformed YAML.
+- **Save** validates first and refuses anything that wouldn't resolve. A
+  config that breaks every task never reaches disk.
+- **Version history** snapshots the previous version on every save, with
+  one-click restore. Restoring re-validates too, so a backup that no longer
+  fits the other file is rejected rather than quietly reintroducing a broken
+  state.
+
+Other tabs cover the same ground in structured form: **Keys & tokens** for API
+keys, **Skills** to read/write skills, **Memory** for the curated files,
+**Agents** and **Providers** to see what resolved.
+
+Every save is attributed to the logged-in user in an audit log.
 
 ### `config/providers.yaml` — models, keys, fallback
 
@@ -215,6 +234,24 @@ Set in `.env` (Compose) or the stack's environment variables (Portainer).
 | `DISCORD_BOT_TOKEN` | Enables Discord |
 | `SLACK_APP_TOKEN` + `SLACK_BOT_TOKEN` | Enables Slack (needs both) |
 | `HF_TOKEN` | Only for gated Hugging Face models |
+
+### API keys from the dashboard
+
+The **Keys & tokens** tab sets provider keys and channel tokens without
+touching the stack. They're written to `secrets.json` in the data volume and
+merged into the environment, so the provider router picks them up on the next
+request.
+
+Two things to know:
+
+- **It's plaintext at rest**, readable by anyone with root on the host or a
+  copy of the volume. That's a real change in blast radius versus keeping keys
+  only in your stack — though Portainer stores those in plaintext too.
+- **A key set in the stack wins** over one stored here, and the UI says so.
+  The stack is the more explicit statement of intent, and silently overriding
+  it would be miserable to debug.
+
+Values are write-only: the API reports whether a key is set, never what it is.
 
 ---
 

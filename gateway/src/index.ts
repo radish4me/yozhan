@@ -52,7 +52,24 @@ app.use(buildAuthRouter(authStore, requireAuth));
 // Everything it *fetches* is behind requireAuth below.
 const dashboardDir = process.env.DASHBOARD_DIR ?? "../dashboard/dist";
 const hasDashboard = existsSync(dashboardDir);
-const API_PREFIXES = ["/auth", "/chat", "/agents", "/skills", "/providers", "/costs", "/proposals", "/pairing", "/health"];
+// Paths the SPA fallback must not answer with HTML. Keep in sync with the
+// routes below — a missing entry here turns a broken API call into a
+// confusing "why did I get the index page?".
+const API_PREFIXES = [
+  "/auth",
+  "/chat",
+  "/agents",
+  "/skills",
+  "/providers",
+  "/costs",
+  "/proposals",
+  "/pairing",
+  "/health",
+  "/config",
+  "/secrets",
+  "/memory",
+  "/orchestrate",
+];
 
 if (hasDashboard) {
   app.use(express.static(dashboardDir));
@@ -82,21 +99,57 @@ app.post("/chat", async (req, res) => {
   res.status(response.status).json(data);
 });
 
-// Runtime views the dashboard renders, proxied through; the runtime is the
-// source of truth and is not exposed to the host network.
-for (const path of ["/agents", "/skills", "/providers", "/costs", "/proposals"]) {
-  app.get(path, async (req, res) => {
-    const query = new URLSearchParams(req.query as Record<string, string>).toString();
-    const response = await fetch(`${RUNTIME_URL}${path}${query ? `?${query}` : ""}`);
-    res.status(response.status).json(await response.json());
-  });
+/**
+ * Forwards a request to the runtime, preserving method, query and body.
+ *
+ * The logged-in username rides along in X-Yozhan-User so the runtime can
+ * record who changed a config file — the gateway is the only component that
+ * knows who is signed in.
+ */
+async function proxyToRuntime(req: Request, res: Response): Promise<void> {
+  const query = new URLSearchParams(req.query as Record<string, string>).toString();
+  const hasBody = req.method !== "GET" && req.method !== "DELETE" && req.body !== undefined;
+
+  try {
+    const response = await fetch(`${RUNTIME_URL}${req.path}${query ? `?${query}` : ""}`, {
+      method: req.method,
+      headers: {
+        "content-type": "application/json",
+        "x-yozhan-user": req.user?.username ?? "unknown",
+      },
+      body: hasBody ? JSON.stringify(req.body) : undefined,
+    });
+    const text = await response.text();
+    res.status(response.status);
+    try {
+      res.json(JSON.parse(text));
+    } catch {
+      res.send(text);
+    }
+  } catch (err) {
+    res.status(502).json({ error: `runtime unreachable: ${(err as Error).message}` });
+  }
 }
 
-for (const action of ["approve", "reject"]) {
-  app.post(`/proposals/:id/${action}`, async (req, res) => {
-    const response = await fetch(`${RUNTIME_URL}/proposals/${req.params.id}/${action}`, { method: "POST" });
-    res.status(response.status).json(await response.json());
-  });
+// Everything the dashboard reads or edits lives on the runtime, which is not
+// exposed to the host network; the gateway is its only way in.
+const PROXIED = [
+  "/agents",
+  "/skills",
+  "/skills/*",
+  "/providers",
+  "/costs",
+  "/proposals",
+  "/proposals/*",
+  "/config",
+  "/config/*",
+  "/secrets",
+  "/secrets/*",
+  "/memory/*",
+  "/orchestrate",
+];
+for (const path of PROXIED) {
+  app.all(path, proxyToRuntime);
 }
 
 app.get("/pairing/pending", (_req, res) => {

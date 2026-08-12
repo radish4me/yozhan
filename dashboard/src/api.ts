@@ -18,6 +18,8 @@ export interface Skill {
   tags: string[];
   tool: string | null;
   elevated: boolean;
+  /** False for skills that ship inside the image, which cannot be edited. */
+  editable: boolean;
 }
 
 export interface Provider {
@@ -92,4 +94,83 @@ export const api = {
   approvePairing: (code: string) => post("/pairing/approve", { code }),
   chat: (message: string, sessionId: string) =>
     post<{ content?: string; error?: string }>("/chat", { message, session_id: sessionId }),
+};
+
+// --- config, secrets, skills, memory (Phases 10-12) ---
+
+export interface ConfigFile {
+  name: string;
+  content: string;
+  parsed: Record<string, unknown>;
+}
+
+export interface BackupInfo {
+  id: string;
+  file: string;
+  created_at: string;
+  size: number;
+}
+
+export interface SecretInfo {
+  name: string;
+  stored: boolean;
+  from_environment: boolean;
+  set: boolean;
+  updated_at: string | null;
+}
+
+export interface AuditEntry {
+  at: string;
+  file: string;
+  actor: string;
+  backup: string | null;
+}
+
+async function put<T>(path: string, body: unknown): Promise<T> {
+  const resp = await fetch(path, {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  checkAuthorized(resp);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error((data as { detail?: string }).detail ?? `${resp.status} ${resp.statusText}`);
+  return data as T;
+}
+
+async function del<T>(path: string): Promise<T> {
+  const resp = await fetch(path, { method: "DELETE", credentials: "same-origin" });
+  checkAuthorized(resp);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error((data as { detail?: string }).detail ?? `${resp.status} ${resp.statusText}`);
+  return data as T;
+}
+
+export const configApi = {
+  index: () => get<{ files: string[]; backups: BackupInfo[] }>("/config"),
+  read: (name: string) => get<ConfigFile>(`/config/${name}`),
+  validate: (name: string, content: string) =>
+    post<{ valid: boolean; error?: string }>(`/config/${name}/validate`, { content }),
+  save: (name: string, content: string) => put<{ saved: string }>(`/config/${name}`, { content }),
+  restore: (backupId: string) => post<{ restored: string }>(`/config/restore/${backupId}`),
+  readBackup: (backupId: string) => get<{ id: string; content: string }>(`/config/backup/${backupId}`),
+  audit: () => get<AuditEntry[]>("/config/audit"),
+};
+
+export const secretsApi = {
+  list: () => get<SecretInfo[]>("/secrets"),
+  set: (name: string, value: string) => put<{ saved: string }>("/secrets", { name, value }),
+  remove: (name: string) => del<{ deleted: string }>(`/secrets/${name}`),
+};
+
+export const skillsApi = {
+  read: (name: string) => get<{ name: string; content: string; editable: boolean }>(`/skills/${name}`),
+  save: (name: string, content: string) => put<{ saved: string }>(`/skills/${name}`, { content }),
+  remove: (name: string) => del<{ deleted: string }>(`/skills/${name}`),
+};
+
+export const memoryApi = {
+  read: (kind: "memory" | "user") => get<{ kind: string; content: string }>(`/memory/${kind}`),
+  save: (kind: "memory" | "user", content: string) => put<{ saved: string }>(`/memory/${kind}`, { content }),
 };

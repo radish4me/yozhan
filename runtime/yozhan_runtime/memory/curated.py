@@ -47,8 +47,9 @@ class CuratedMemory:
         path, cap = self._path_for(kind)
         content = content.strip()
         if len(content) > cap:
+            filename = "MEMORY.md" if kind == "memory" else "USER.md"
             raise MemoryCapExceeded(
-                f"{kind} memory is {len(content)} chars, over the {cap}-char cap — "
+                f"{filename} would be {len(content)} chars, over the {cap}-char cap — "
                 "remove or condense an entry instead of growing the file"
             )
         path.write_text(content + "\n" if content else "", encoding="utf-8")

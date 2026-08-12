@@ -3,13 +3,24 @@ import { auth, type AuthStatus } from "./auth";
 import { Account } from "./views/Account";
 import { Agents } from "./views/Agents";
 import { Chat } from "./views/Chat";
+import { ConfigEditor } from "./views/ConfigEditor";
 import { Costs } from "./views/Costs";
 import { Gate } from "./views/Gate";
 import { Learning } from "./views/Learning";
+import { MemoryEditor } from "./views/MemoryEditor";
 import { Pairing } from "./views/Pairing";
 import { Providers } from "./views/Providers";
+import { Secrets } from "./views/Secrets";
+import { SkillsEditor } from "./views/SkillsEditor";
 
-const TABS = ["Chat", "Agents", "Providers", "Costs", "Learning", "Pairing", "Account"] as const;
+const GROUPS = [
+  { label: "Use", tabs: ["Chat", "Costs"] },
+  { label: "Configure", tabs: ["Configuration", "Keys & tokens", "Agents", "Providers"] },
+  { label: "Content", tabs: ["Skills", "Memory", "Learning"] },
+  { label: "Access", tabs: ["Pairing", "Account"] },
+] as const;
+
+const TABS = GROUPS.flatMap((g) => g.tabs);
 type Tab = (typeof TABS)[number];
 
 export function App() {
@@ -58,10 +69,15 @@ export function App() {
       <nav className="sidebar">
         <div className="brand">yozhan</div>
         <div className="nav">
-          {TABS.map((name) => (
-            <button key={name} aria-current={tab === name} onClick={() => setTab(name)}>
-              {name}
-            </button>
+          {GROUPS.map((group) => (
+            <div key={group.label} className="nav-group">
+              <div className="nav-heading">{group.label}</div>
+              {group.tabs.map((name) => (
+                <button key={name} aria-current={tab === name} onClick={() => setTab(name as Tab)}>
+                  {name}
+                </button>
+              ))}
+            </div>
           ))}
         </div>
         <button className="nav-signout" onClick={signOut}>
@@ -76,9 +92,13 @@ export function App() {
           </p>
         )}
         {tab === "Chat" && <Chat />}
+        {tab === "Costs" && <Costs />}
+        {tab === "Configuration" && <ConfigEditor />}
+        {tab === "Keys & tokens" && <Secrets />}
         {tab === "Agents" && <Agents />}
         {tab === "Providers" && <Providers />}
-        {tab === "Costs" && <Costs />}
+        {tab === "Skills" && <SkillsEditor />}
+        {tab === "Memory" && <MemoryEditor />}
         {tab === "Learning" && <Learning />}
         {tab === "Pairing" && <Pairing />}
         {tab === "Account" && <Account onSignedOut={refresh} />}
