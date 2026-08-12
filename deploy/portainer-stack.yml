@@ -107,8 +107,12 @@ services:
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
       SLACK_APP_TOKEN: ${SLACK_APP_TOKEN:-}
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+    # Once nginx (or any TLS proxy) is in front, change this to
+    #   "127.0.0.1:${GATEWAY_PORT:-3000}:3000"
+    # so the plain-HTTP port stops being reachable from the internet and
+    # cannot bypass your proxy. See deploy/nginx-yozhan.conf.
     ports:
-      - "${GATEWAY_PORT:-3000}:3000"
+      - "${GATEWAY_BIND:-0.0.0.0}:${GATEWAY_PORT:-3000}:3000"
     volumes:
       - gateway_data:/app/gateway/data
     networks: [yozhan]

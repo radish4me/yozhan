@@ -92,3 +92,58 @@ input[type="text"], input[type="password"] {
 .chat-form { display: flex; gap: 8px; }
 
 pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; overflow-x: auto; }
+
+/* --- auth screens --- */
+.gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.gate-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 28px;
+}
+
+.gate-card h1 { font-size: 18px; margin: 0 0 6px; }
+.gate-card label {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin: 14px 0 4px;
+}
+.gate-card button { width: 100%; margin-top: 20px; }
+
+button.action.primary { border-color: var(--accent); color: var(--accent); }
+
+.warn-banner {
+  background: #40300f;
+  border: 1px solid #6b5320;
+  color: #e8c07d;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  margin: 0 0 16px;
+}
+
+.card-title { font-size: 14px; margin: 0 0 12px; }
+.card label { display: block; color: var(--muted); font-size: 12px; margin: 12px 0 4px; }
+
+.sidebar { display: flex; flex-direction: column; }
+.nav-signout {
+  margin-top: auto;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+.nav-signout:hover { color: var(--text); border-color: var(--accent); }

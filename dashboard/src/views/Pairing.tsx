@@ -3,8 +3,8 @@ import { api } from "../api";
 import { useAsync } from "../useAsync";
 import { Async, Panel } from "./Panel";
 
-export function Pairing({ adminToken }: { adminToken: string }) {
-  const pending = useAsync(() => (adminToken ? api.pendingPairings(adminToken) : Promise.resolve([])), [adminToken]);
+export function Pairing() {
+  const pending = useAsync(() => api.pendingPairings());
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -12,21 +12,13 @@ export function Pairing({ adminToken }: { adminToken: string }) {
     setBusy(code);
     setActionError(null);
     try {
-      await api.approvePairing(code, adminToken);
+      await api.approvePairing(code);
       pending.reload();
     } catch (err) {
       setActionError((err as Error).message);
     } finally {
       setBusy(null);
     }
-  }
-
-  if (!adminToken) {
-    return (
-      <Panel title="Pairing" subtitle="Approve people who have messaged yozhan on a channel.">
-        <p className="muted">Set an admin token in Settings to view pairing requests.</p>
-      </Panel>
-    );
   }
 
   return (

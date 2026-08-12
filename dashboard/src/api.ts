@@ -53,23 +53,29 @@ export interface PendingPairing {
   expiresAt: string;
 }
 
-async function get<T>(path: string, adminToken?: string): Promise<T> {
-  const resp = await fetch(path, {
-    headers: adminToken ? { authorization: `Bearer ${adminToken}` } : undefined,
-  });
+/** A 401 means the session expired; tell App to show the login screen again. */
+function checkAuthorized(resp: Response): void {
+  if (resp.status === 401) {
+    window.dispatchEvent(new CustomEvent("yozhan:unauthorized"));
+    throw new Error("Your session expired. Please sign in again.");
+  }
+}
+
+async function get<T>(path: string): Promise<T> {
+  const resp = await fetch(path, { credentials: "same-origin" });
+  checkAuthorized(resp);
   if (!resp.ok) throw new Error(`${path} failed: ${resp.status} ${resp.statusText}`);
   return (await resp.json()) as T;
 }
 
-async function post<T>(path: string, body?: unknown, adminToken?: string): Promise<T> {
+async function post<T>(path: string, body?: unknown): Promise<T> {
   const resp = await fetch(path, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(adminToken ? { authorization: `Bearer ${adminToken}` } : {}),
-    },
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  checkAuthorized(resp);
   if (!resp.ok) throw new Error(`${path} failed: ${resp.status} ${resp.statusText}`);
   return (await resp.json()) as T;
 }
@@ -80,10 +86,10 @@ export const api = {
   providers: () => get<Provider[]>("/providers"),
   costs: (by = "agent") => get<CostRow[]>(`/costs?by=${by}`),
   proposals: () => get<Proposal[]>("/proposals"),
-  approveProposal: (id: number, token: string) => post(`/proposals/${id}/approve`, undefined, token),
-  rejectProposal: (id: number, token: string) => post(`/proposals/${id}/reject`, undefined, token),
-  pendingPairings: (token: string) => get<PendingPairing[]>("/pairing/pending", token),
-  approvePairing: (code: string, token: string) => post("/pairing/approve", { code }, token),
+  approveProposal: (id: number) => post(`/proposals/${id}/approve`),
+  rejectProposal: (id: number) => post(`/proposals/${id}/reject`),
+  pendingPairings: () => get<PendingPairing[]>("/pairing/pending"),
+  approvePairing: (code: string) => post("/pairing/approve", { code }),
   chat: (message: string, sessionId: string) =>
     post<{ content?: string; error?: string }>("/chat", { message, session_id: sessionId }),
 };

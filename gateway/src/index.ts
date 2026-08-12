@@ -1,14 +1,21 @@
-// yozhan Gateway entrypoint. Phase 5: pairing/auth (unknown senders get a
-// short-lived code, an admin approves it once — see pairing/store.ts and
-// pairing-cli.ts) plus the first channel adapter (Telegram, long-polling).
-// Paired identities round-trip through the same Agent Runtime /chat endpoint
-// the CLI uses, each in its own persisted session ("<channel>:<externalId>").
-// See ARCHITECTURE.md section 3.1 and ROADMAP.md Phase 5.
+// yozhan Gateway entrypoint. Channels (Telegram/Discord/Slack) with pairing,
+// the dashboard API, and — since Phase 9 — session-based authentication in
+// front of all of it.
+//
+// Every API route below requires a logged-in session or the admin bearer
+// token. The only unauthenticated endpoints are /health (for container
+// healthchecks), the /auth/* endpoints themselves, and the dashboard's static
+// assets, which contain no data.
+//
+// See ARCHITECTURE.md section 3.1 and ROADMAP.md Phases 5 and 9.
 
 import express, { type Request, type Response } from "express";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { buildRequireAuth } from "./auth/middleware.js";
+import { buildAuthRouter } from "./auth/routes.js";
+import { AuthStore } from "./auth/store.js";
 import { DiscordAdapter } from "./channels/discord.js";
 import { SlackAdapter } from "./channels/slack.js";
 import { TelegramAdapter } from "./channels/telegram.js";
@@ -22,13 +29,48 @@ const DATA_DIR = process.env.GATEWAY_DATA_DIR ?? "data";
 const ADMIN_TOKEN = process.env.GATEWAY_ADMIN_TOKEN;
 
 const pairingStore = new PairingStore(`${DATA_DIR}/pairings.json`);
+const authStore = new AuthStore(DATA_DIR);
+const requireAuth = buildRequireAuth(authStore, ADMIN_TOKEN);
 
 const app = express();
+// Behind nginx/Caddy, req.protocol should reflect the client's scheme rather
+// than the plain-HTTP hop from the proxy — that is what decides whether the
+// session cookie gets the Secure flag.
+app.set("trust proxy", process.env.TRUST_PROXY ?? true);
 app.use(express.json());
 
+// Unauthenticated: container healthchecks need it. Deliberately says nothing
+// about the deployment beyond liveness.
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", runtime_url: RUNTIME_URL });
+  res.json({ status: "ok" });
 });
+
+app.use(buildAuthRouter(authStore, requireAuth));
+
+// The dashboard's static assets are served unauthenticated on purpose: they
+// contain no data, and the app has to load before it can render a login form.
+// Everything it *fetches* is behind requireAuth below.
+const dashboardDir = process.env.DASHBOARD_DIR ?? "../dashboard/dist";
+const hasDashboard = existsSync(dashboardDir);
+const API_PREFIXES = ["/auth", "/chat", "/agents", "/skills", "/providers", "/costs", "/proposals", "/pairing", "/health"];
+
+if (hasDashboard) {
+  app.use(express.static(dashboardDir));
+  // SPA fallback, in front of the guard so a deep link still loads the app and
+  // can render the login form. API paths are handed onward to their real
+  // handlers (and the guard) rather than being answered with HTML.
+  app.get("*", (req, res, next) => {
+    if (API_PREFIXES.some((prefix) => req.path === prefix || req.path.startsWith(`${prefix}/`))) {
+      next();
+      return;
+    }
+    res.sendFile(resolve(dashboardDir, "index.html"));
+  });
+  console.log(`[gateway] serving dashboard from ${dashboardDir}`);
+}
+
+// Everything past this point requires authentication.
+app.use(requireAuth);
 
 app.post("/chat", async (req, res) => {
   const response = await fetch(`${RUNTIME_URL}/chat`, {
@@ -40,8 +82,8 @@ app.post("/chat", async (req, res) => {
   res.status(response.status).json(data);
 });
 
-// Read-only runtime views the dashboard renders. These proxy straight through;
-// the runtime is the source of truth and is not exposed to the host network.
+// Runtime views the dashboard renders, proxied through; the runtime is the
+// source of truth and is not exposed to the host network.
 for (const path of ["/agents", "/skills", "/providers", "/costs", "/proposals"]) {
   app.get(path, async (req, res) => {
     const query = new URLSearchParams(req.query as Record<string, string>).toString();
@@ -50,40 +92,22 @@ for (const path of ["/agents", "/skills", "/providers", "/costs", "/proposals"])
   });
 }
 
-// Approving a proposal writes a new skill to disk, so it is admin-gated —
-// unlike the read-only views above.
 for (const action of ["approve", "reject"]) {
   app.post(`/proposals/:id/${action}`, async (req, res) => {
-    if (!requireAdmin(req, res)) return;
     const response = await fetch(`${RUNTIME_URL}/proposals/${req.params.id}/${action}`, { method: "POST" });
     res.status(response.status).json(await response.json());
   });
 }
 
-function requireAdmin(req: Request, res: Response): boolean {
-  if (!ADMIN_TOKEN) {
-    res.status(503).json({ error: "GATEWAY_ADMIN_TOKEN is not configured on this deployment" });
-    return false;
-  }
-  if (req.header("authorization") !== `Bearer ${ADMIN_TOKEN}`) {
-    res.status(401).json({ error: "unauthorized" });
-    return false;
-  }
-  return true;
-}
-
-app.get("/pairing/pending", (req, res) => {
-  if (!requireAdmin(req, res)) return;
+app.get("/pairing/pending", (_req, res) => {
   res.json(pairingStore.listPending());
 });
 
-app.get("/pairing/paired", (req, res) => {
-  if (!requireAdmin(req, res)) return;
+app.get("/pairing/paired", (_req, res) => {
   res.json(pairingStore.listPaired());
 });
 
 app.post("/pairing/approve", (req, res) => {
-  if (!requireAdmin(req, res)) return;
   const code = req.body?.code;
   if (typeof code !== "string") {
     res.status(400).json({ error: "body must include { code: string }" });
@@ -156,15 +180,6 @@ async function startChannels(): Promise<ChannelAdapter[]> {
     console.log("[gateway] no channels configured — HTTP API only");
   }
   return adapters;
-}
-
-// Serve the built dashboard, when one has been built into the image. Mounted
-// last so it never shadows an API route above.
-const dashboardDir = process.env.DASHBOARD_DIR ?? "../dashboard/dist";
-if (existsSync(dashboardDir)) {
-  app.use(express.static(dashboardDir));
-  app.get("*", (_req, res) => res.sendFile(resolve(dashboardDir, "index.html")));
-  console.log(`[gateway] serving dashboard from ${dashboardDir}`);
 }
 
 // Only start the HTTP server / channel adapters when this file is run

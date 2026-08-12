@@ -117,12 +117,53 @@ To update later: Portainer → your stack → **Pull and redeploy**.
 
 ## Turning things on
 
-### The dashboard
+### The dashboard and your login
 
-`http://YOUR_VPS_IP:3000`. Read-only tabs (Chat, Agents, Providers, Costs)
-work immediately. To approve pairings or skill proposals, open **Settings**
-and paste your `GATEWAY_ADMIN_TOKEN` — it's kept for that browser session
-only.
+Open the dashboard and it will ask you to **create an admin account** — this
+is the first run, so no account exists yet. Pick a username and a password of
+at least 12 characters.
+
+That setup page closes permanently once an account exists; from then on it's
+a normal sign-in. There is **no password reset**: if you lose it, clear
+`auth.json` from the `gateway_data` volume over SSH and the setup page comes
+back.
+
+Everything behind the login is protected — chat, agents, providers, costs,
+pairing, skill approvals. `GATEWAY_ADMIN_TOKEN` still works as a bearer token
+for scripts and `pairing-cli`, so automation doesn't need a browser session.
+
+Add more users, change your password, or sign out every device from the
+**Account** tab.
+
+### Put it behind nginx (do this before exposing it)
+
+The login is only as private as the connection carrying it. Over plain HTTP
+your password and session cookie are readable by anything on the network
+path, so terminate TLS in front of the gateway.
+
+[`deploy/nginx-yozhan.conf`](../deploy/nginx-yozhan.conf) is a ready site
+file:
+
+```bash
+sudo cp deploy/nginx-yozhan.conf /etc/nginx/sites-available/yozhan
+sudo ln -s /etc/nginx/sites-available/yozhan /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d yozhan.rkshanu.cloud
+```
+
+Then **stop publishing the gateway port publicly**, or the plain-HTTP port
+still bypasses nginx entirely. In the stack, bind it to loopback:
+
+```yaml
+    ports:
+      - "127.0.0.1:3030:3000"
+```
+
+Redeploy, and the dashboard is reachable only through nginx over HTTPS. The
+gateway reads `X-Forwarded-Proto` from nginx, so the session cookie picks up
+the `Secure` flag automatically — the dashboard's plain-HTTP warning banner
+disappears once that's working, which makes it a useful check that the proxy
+headers are right.
 
 ### Telegram
 

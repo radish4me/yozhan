@@ -3,22 +3,18 @@ import { api } from "../api";
 import { useAsync } from "../useAsync";
 import { Async, Panel } from "./Panel";
 
-export function Learning({ adminToken }: { adminToken: string }) {
+export function Learning() {
   const proposals = useAsync(() => api.proposals());
   const [expanded, setExpanded] = useState<number | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   async function act(id: number, action: "approve" | "reject") {
-    if (!adminToken) {
-      setActionError("Set an admin token in Settings before approving or rejecting.");
-      return;
-    }
     setBusy(id);
     setActionError(null);
     try {
-      if (action === "approve") await api.approveProposal(id, adminToken);
-      else await api.rejectProposal(id, adminToken);
+      if (action === "approve") await api.approveProposal(id);
+      else await api.rejectProposal(id);
       proposals.reload();
     } catch (err) {
       setActionError((err as Error).message);

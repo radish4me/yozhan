@@ -205,7 +205,8 @@ Set in `.env` (Compose) or the stack's environment variables (Portainer).
 
 | Variable | Purpose |
 |---|---|
-| `GATEWAY_ADMIN_TOKEN` | **Required.** Authorizes pairing + skill approvals |
+| `GATEWAY_ADMIN_TOKEN` | **Required.** Bearer token for scripts/CLI; humans use the login instead |
+| `TRUST_PROXY` | Express trust-proxy setting; defaults to on, for use behind nginx |
 | `LOCAL_DEFAULT_MODEL` | Which shipped local model to use |
 | `ANTHROPIC_API_KEY_1`, `_2` | Two keys ⇒ automatic rotation |
 | `GEMINI_API_KEY_1`, `_2` | Same |
@@ -232,8 +233,24 @@ yozhan chat --model lfm2.5       # override the model for this session
 `http://localhost:3000` — chat, resolved model assignments, skills, provider
 key health, cost/latency, staged skill proposals, pairing.
 
-Read-only tabs need nothing. To approve anything, paste your
-`GATEWAY_ADMIN_TOKEN` under **Settings** (held for that browser session only).
+**First visit asks you to create an admin account** (username + a password of
+at least 12 characters). That page closes permanently afterwards; from then
+on it's a normal sign-in, and everything in the dashboard requires it.
+
+There is no password reset. If you lose it, delete `auth.json` from the
+gateway's data directory and the setup page returns.
+
+`GATEWAY_ADMIN_TOKEN` still works as an `Authorization: Bearer` token for
+scripts and `pairing-cli`, so automation doesn't need a browser session.
+
+The **Account** tab handles password changes, extra users, and
+"sign out everywhere".
+
+**Serve it over HTTPS if it is reachable from the internet.** A login over
+plain HTTP sends the password and session cookie in the clear; the dashboard
+shows a warning banner until it sees a secure connection. See
+[PORTAINER.md](PORTAINER.md#put-it-behind-nginx-do-this-before-exposing-it)
+for an nginx site file.
 
 ### Messaging channels
 
@@ -547,6 +564,20 @@ Expected until you approve its pairing code. Dashboard → **Pairing**.
 **Dashboard loads but tabs are empty**
 The gateway can't reach the runtime. Check the `runtime` container.
 
+**I forgot my dashboard password**
+There's no reset — recovery means server access by design. Delete `auth.json`
+from the gateway's data directory and restart it; the first-run setup page
+comes back. Under Docker:
+`docker exec <gateway> rm /app/gateway/data/auth.json && docker restart <gateway>`
+
+**"Too many failed attempts"**
+Login throttling after repeated failures, with a delay that grows each time.
+It clears on a successful login, or by restarting the gateway.
+
+**The plain-HTTP warning banner won't go away behind my proxy**
+Your proxy isn't sending `X-Forwarded-Proto: https`. See the headers in
+[`deploy/nginx-yozhan.conf`](../deploy/nginx-yozhan.conf).
+
 **The assistant forgot something I told it**
 Conversation history is per session. Cross-session facts belong in curated
 memory — `yozhan memory add "..."`.
@@ -601,9 +632,15 @@ Under Docker, prefix with `docker compose exec runtime`.
 | `GET` | `/health` | — |
 | `POST` | `/chat` | — |
 | `GET` | `/agents`, `/skills`, `/providers`, `/costs`, `/proposals` | — |
-| `POST` | `/proposals/:id/approve`, `/proposals/:id/reject` | admin token |
-| `GET` | `/pairing/pending`, `/pairing/paired` | admin token |
-| `POST` | `/pairing/approve` | admin token |
+| `POST` | `/proposals/:id/approve`, `/proposals/:id/reject` | session or token |
+| `GET` | `/pairing/pending`, `/pairing/paired` | session or token |
+| `POST` | `/pairing/approve` | session or token |
+| `GET` | `/auth/status` | — |
+| `POST` | `/auth/setup` | — (first run only, then 410) |
+| `POST` | `/auth/login` | — (throttled) |
+| `POST` | `/auth/logout`, `/auth/password`, `/auth/users` | session |
 
-The read-only endpoints have no auth — put the gateway behind a reverse proxy
-with TLS and access control before exposing it publicly.
+"session or token" means either a dashboard login cookie or
+`Authorization: Bearer $GATEWAY_ADMIN_TOKEN`. Only `/health`, the `/auth`
+entry points, and the dashboard's static assets are reachable without
+credentials.
